@@ -43,3 +43,5 @@ extends:
                   useGlobalJson: true
               - script: dotnet build eShop.Web.slnf
                 displayName: Build Step
+              - script: dotnet test tests/Basket.FunctionalTests/Basket.FunctionalTests.csproj --no-build
+                displayName: Basket API contract tests
