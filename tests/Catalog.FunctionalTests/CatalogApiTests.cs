@@ -1,10 +1,15 @@
-﻿using System.Net.Http.Json;
 using System.Net;
+using System.Net.Http.Json;
 using System.Text.Json;
+
 using Asp.Versioning;
 using Asp.Versioning.Http;
 using eShop.Catalog.API.Model;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 
 namespace eShop.Catalog.FunctionalTests;
 
@@ -465,5 +470,38 @@ public sealed class CatalogApiTests : IClassFixture<CatalogApiFixture>
             TestContext.Current.CancellationToken);
         Assert.Empty(result!.Data);
         Assert.Equal(1000, result.PageIndex);
+    }
+
+    [Fact]
+    public async Task DemoSeedIsIdempotentAndSkipsOutsideDevelopment()
+    {
+        using var scope = _webApplicationFactory.Services.CreateScope();
+        var services = scope.ServiceProvider;
+        var context = services.GetRequiredService<eShop.Catalog.API.Infrastructure.CatalogContext>();
+        var seeder = ActivatorUtilities.CreateInstance<eShop.Catalog.API.Infrastructure.CatalogContextSeed>(services);
+        var environment = services.GetRequiredService<IWebHostEnvironment>();
+
+        var itemCount = await context.CatalogItems.CountAsync();
+        var brandCount = await context.CatalogBrands.CountAsync();
+        var typeCount = await context.CatalogTypes.CountAsync();
+        var originalEnvironment = environment.EnvironmentName;
+
+        await seeder.SeedAsync(context);
+        Assert.Equal(itemCount, await context.CatalogItems.CountAsync());
+        Assert.Equal(brandCount, await context.CatalogBrands.CountAsync());
+        Assert.Equal(typeCount, await context.CatalogTypes.CountAsync());
+
+        environment.EnvironmentName = Environments.Production;
+        try
+        {
+            await seeder.SeedAsync(context);
+            Assert.Equal(itemCount, await context.CatalogItems.CountAsync());
+            Assert.Equal(brandCount, await context.CatalogBrands.CountAsync());
+            Assert.Equal(typeCount, await context.CatalogTypes.CountAsync());
+        }
+        finally
+        {
+            environment.EnvironmentName = originalEnvironment;
+        }
     }
 }
