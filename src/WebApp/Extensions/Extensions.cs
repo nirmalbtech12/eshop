@@ -1,4 +1,4 @@
-﻿using eShop.Basket.API.Grpc;
+using eShop.Basket.API.Grpc;
 using eShop.WebApp.Services.OrderStatus.IntegrationEvents;
 using eShop.WebAppComponents.Services;
 using Microsoft.AspNetCore.Authentication.Cookies;
@@ -23,6 +23,7 @@ public static class Extensions
         builder.Services.AddScoped<BasketState>();
         builder.Services.AddScoped<LogOutService>();
         builder.Services.AddSingleton<BasketService>();
+        builder.Services.AddSingleton<IBasketService>(sp => sp.GetRequiredService<BasketService>());
         builder.Services.AddSingleton<OrderStatusNotificationService>();
         builder.Services.AddSingleton<IProductImageUrlProvider, ProductImageUrlProvider>();
         builder.AddAIServices();

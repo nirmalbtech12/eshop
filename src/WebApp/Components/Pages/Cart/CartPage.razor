@@ -1,4 +1,4 @@
-﻿@page "/cart"
+@page "/cart"
 @inject NavigationManager Nav
 @inject BasketState Basket
 @inject IProductImageUrlProvider ProductImages
@@ -134,6 +134,13 @@
     {
         var id = UpdateQuantityId!.Value;
         var quantity = UpdateQuantityValue!.Value;
+        if (quantity < 0)
+        {
+            UpdateQuantityId = null;
+            UpdateQuantityValue = null;
+            return;
+        }
+
         await Basket.SetQuantityAsync(id, quantity);
         basketItems = await Basket.GetBasketItemsAsync();
     }

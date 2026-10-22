@@ -1,4 +1,4 @@
-﻿using System.Security.Claims;
+using System.Security.Claims;
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.Authorization;
 using eShop.WebAppComponents.Catalog;
@@ -7,8 +7,8 @@ using eShop.WebAppComponents.Services;
 namespace eShop.WebApp.Services;
 
 public class BasketState(
-    BasketService basketService,
-    CatalogService catalogService,
+    IBasketService basketService,
+    ICatalogService catalogService,
     OrderingService orderingService,
     AuthenticationStateProvider authenticationStateProvider) : IBasketState
 {
@@ -57,6 +57,8 @@ public class BasketState(
 
     public async Task SetQuantityAsync(int productId, int quantity)
     {
+        ArgumentOutOfRangeException.ThrowIfNegative(quantity);
+
         var existingItems = (await FetchBasketItemsAsync()).ToList();
         if (existingItems.FirstOrDefault(row => row.ProductId == productId) is { } row)
         {
