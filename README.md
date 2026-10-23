@@ -149,7 +149,9 @@ For more information on contributing to this repo, read [the contribution docume
 
 ### Sample data
 
-The sample catalog data is defined in [catalog.json](https://github.com/dotnet/eShop/blob/main/src/Catalog.API/Setup/catalog.json). Those product names, descriptions, and brand names are fictional and were generated using [GPT-35-Turbo](https://learn.microsoft.com/en-us/azure/ai-services/openai/how-to/chatgpt), and the corresponding [product images](https://github.com/dotnet/eShop/tree/main/src/Catalog.API/Pics) were generated using [DALL·E 3](https://openai.com/dall-e-3).
+The sample catalog data is defined in [catalog.json](https://github.com/dotnet/eShop/blob/main/src/Catalog.API/Setup/catalog.json). In Development, the catalog service seeds this checked-in fixture when the catalog has no items. Brand and type IDs follow the fixture's first-seen category order, giving fresh local databases repeatable IDs. Rerunning the seed skips an already populated catalog and preserves existing brand and type rows. The demo seed is disabled outside Development so application startup does not replace production catalog data.
+
+The fixture covers multiple product types and brands. Product names, descriptions, and brand names are fictional and were generated using [GPT-35-Turbo](https://learn.microsoft.com/en-us/azure/ai-services/openai/how-to/chatgpt), and the corresponding [product images](https://github.com/dotnet/eShop/tree/main/src/Catalog.API/Pics) were generated using [DALL·E 3](https://openai.com/dall-e-3).
 
 ## eShop on Azure
 

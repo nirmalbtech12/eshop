@@ -12,6 +12,12 @@ public partial class CatalogContextSeed(
 {
     public async Task SeedAsync(CatalogContext context)
     {
+        if (!env.IsDevelopment())
+        {
+            logger.LogInformation("Skipping demo catalog seed outside Development");
+            return;
+        }
+
         var useCustomizationData = settings.Value.UseCustomizationData;
         var contentRootPath = env.ContentRootPath;
         var picturePath = env.WebRootPath;
@@ -26,17 +32,13 @@ public partial class CatalogContextSeed(
             var sourceJson = File.ReadAllText(sourcePath);
             var sourceItems = JsonSerializer.Deserialize<CatalogSourceEntry[]>(sourceJson) ?? Array.Empty<CatalogSourceEntry>();
 
-            context.CatalogBrands.RemoveRange(context.CatalogBrands);
-            await context.CatalogBrands.AddRangeAsync(sourceItems.Select(x => x.Brand).Distinct()
-                .Where(brandName => brandName != null)
-                .Select(brandName => new CatalogBrand(brandName!)));
-            logger.LogInformation("Seeded catalog with {NumBrands} brands", context.CatalogBrands.Count());
+            var brandNames = sourceItems.Select(x => x.Brand).Where(x => x != null).Select(x => x!).Distinct().ToArray();
+            var existingBrandNames = await context.CatalogBrands.Select(x => x.Brand).ToListAsync();
+            await context.CatalogBrands.AddRangeAsync(brandNames.Where(name => !existingBrandNames.Contains(name)).Select(name => new CatalogBrand(name)));
 
-            context.CatalogTypes.RemoveRange(context.CatalogTypes);
-            await context.CatalogTypes.AddRangeAsync(sourceItems.Select(x => x.Type).Distinct()
-                .Where(typeName => typeName != null)
-                .Select(typeName => new CatalogType(typeName!)));
-            logger.LogInformation("Seeded catalog with {NumTypes} types", context.CatalogTypes.Count());
+            var typeNames = sourceItems.Select(x => x.Type).Where(x => x != null).Select(x => x!).Distinct().ToArray();
+            var existingTypeNames = await context.CatalogTypes.Select(x => x.Type).ToListAsync();
+            await context.CatalogTypes.AddRangeAsync(typeNames.Where(name => !existingTypeNames.Contains(name)).Select(name => new CatalogType(name)));
 
             await context.SaveChangesAsync();
 
@@ -69,7 +71,7 @@ public partial class CatalogContextSeed(
             }
 
             await context.CatalogItems.AddRangeAsync(catalogItems);
-            logger.LogInformation("Seeded catalog with {NumItems} items", context.CatalogItems.Count());
+            logger.LogInformation("Seeded catalog with {NumItems} items", catalogItems.Length);
             await context.SaveChangesAsync();
         }
     }
