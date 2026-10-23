@@ -43,3 +43,5 @@ extends:
                   useGlobalJson: true
               - script: dotnet build eShop.Web.slnf
                 displayName: Build Step
+              - script: dotnet test --solution eShop.Web.slnf --no-build --no-progress --output detailed
+                displayName: Test Step
