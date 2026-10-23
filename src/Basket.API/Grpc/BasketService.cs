@@ -46,6 +46,11 @@ public class BasketService(
             logger.LogDebug("Begin UpdateBasket call from method {Method} for basket id {Id}", context.Method, userId);
         }
 
+        if (request.Items.Any(item => item.Quantity < 0))
+        {
+            throw new RpcException(new Status(StatusCode.InvalidArgument, "Basket item quantities cannot be negative."));
+        }
+
         var customerBasket = MapToCustomerBasket(userId, request);
         var response = await repository.UpdateBasketAsync(customerBasket);
         if (response is null)

@@ -102,6 +102,20 @@ public class BasketServiceTests
     }
 
     [TestMethod]
+    public async Task UpdateBasketRejectsNegativeQuantity()
+    {
+        var repository = Substitute.For<IBasketRepository>();
+        var service = new BasketService(repository, NullLogger<BasketService>.Instance);
+        var request = new UpdateBasketRequest();
+        request.Items.Add(new eShop.Basket.API.Grpc.BasketItem { ProductId = 42, Quantity = -1 });
+
+        var exception = await Assert.ThrowsAsync<RpcException>(() => service.UpdateBasket(request, CreateContext("buyer-1")));
+
+        Assert.AreEqual(StatusCode.InvalidArgument, exception.StatusCode);
+        await repository.DidNotReceive().UpdateBasketAsync(Arg.Any<CustomerBasket>());
+    }
+
+    [TestMethod]
     public async Task UpdateBasketReturnsNotFoundWhenRepositoryCannotPersist()
     {
         var repository = Substitute.For<IBasketRepository>();

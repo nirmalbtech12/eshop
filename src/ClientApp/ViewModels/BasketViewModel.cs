@@ -44,9 +44,10 @@ public partial class BasketViewModel : ViewModelBase
                         basketItem.PictureUrl = catalogItem.PictureUri;
                         basketItem.ProductName = catalogItem.Name;
                         basketItem.UnitPrice = catalogItem.Price;
-                        await AddBasketItemAsync(basketItem, innerList);
+                        innerList.Add(basketItem);
                     }
                 });
+            ReCalculateTotal();
         }
     }
 
@@ -85,6 +86,50 @@ public partial class BasketViewModel : ViewModelBase
 
         ReCalculateTotal();
     }
+
+    public async Task UpdateQuantityAsync(BasketItem item, int quantity)
+    {
+        if (quantity < 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(quantity));
+        }
+
+        var basket = await _appEnvironmentService.BasketService.GetBasketAsync();
+        if (basket is null)
+        {
+            return;
+        }
+
+        var displayedItem = _basketItems.FirstOrDefault(x => x.ProductId == item.ProductId);
+        if (displayedItem is null)
+        {
+            return;
+        }
+
+        if (quantity == 0)
+        {
+            _basketItems.Remove(displayedItem);
+            basket.RemoveItemFromBasket(item);
+        }
+        else
+        {
+            displayedItem.Quantity = quantity;
+            var persistedItem = basket.Items.FirstOrDefault(x => x.ProductId == item.ProductId);
+            if (persistedItem is not null)
+            {
+                persistedItem.Quantity = quantity;
+            }
+        }
+
+        await _appEnvironmentService.BasketService.UpdateBasketAsync(basket);
+        ReCalculateTotal();
+    }
+
+    [RelayCommand]
+    private Task IncreaseQuantityAsync(BasketItem item) => UpdateQuantityAsync(item, item.Quantity + 1);
+
+    [RelayCommand]
+    private Task DecreaseQuantityAsync(BasketItem item) => UpdateQuantityAsync(item, item.Quantity - 1);
 
     public async Task ClearBasketItems()
     {
