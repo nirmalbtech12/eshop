@@ -21,6 +21,7 @@ public static class Extensions
 
         // Application services
         builder.Services.AddScoped<BasketState>();
+        builder.Services.AddScoped<IBasketService>(sp => sp.GetRequiredService<BasketService>());
         builder.Services.AddScoped<LogOutService>();
         builder.Services.AddSingleton<BasketService>();
         builder.Services.AddSingleton<OrderStatusNotificationService>();
@@ -34,6 +35,7 @@ public static class Extensions
         builder.Services.AddHttpClient<CatalogService>(o => o.BaseAddress = new("https+http://catalog-api"))
             .AddApiVersion(2.0)
             .AddAuthToken();
+        builder.Services.AddScoped<ICatalogService>(sp => sp.GetRequiredService<CatalogService>());
 
         builder.Services.AddHttpClient<OrderingService>(o => o.BaseAddress = new("https+http://ordering-api"))
             .AddApiVersion(1.0)
