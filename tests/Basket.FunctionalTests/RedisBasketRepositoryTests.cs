@@ -38,6 +38,36 @@ public sealed class RedisBasketRepositoryTests(RedisFixture fixture) : IClassFix
     }
 
     [Fact]
+    public async Task UpdatedQuantityAndZeroRemovalPersistAcrossReads()
+    {
+        var repository = new RedisBasketRepository(
+            NullLogger<RedisBasketRepository>.Instance,
+            fixture.Connection);
+        var buyerId = $"buyer-{Guid.NewGuid():N}";
+
+        await repository.UpdateBasketAsync(new CustomerBasket
+        {
+            BuyerId = buyerId,
+            Items = [
+                new BasketItem { ProductId = 42, Quantity = 2, UnitPrice = 12.50m },
+                new BasketItem { ProductId = 43, Quantity = 1, UnitPrice = 3m }
+            ]
+        });
+        await repository.UpdateBasketAsync(new CustomerBasket
+        {
+            BuyerId = buyerId,
+            Items = [new BasketItem { ProductId = 42, Quantity = 5, UnitPrice = 12.50m }]
+        });
+
+        var loaded = await repository.GetBasketAsync(buyerId);
+
+        Assert.NotNull(loaded);
+        Assert.Equal(5, Assert.Single(loaded.Items).Quantity);
+        Assert.Equal(62.50m, loaded.Items.Sum(item => item.Quantity * item.UnitPrice));
+        await repository.DeleteBasketAsync(buyerId);
+    }
+
+    [Fact]
     public async Task MissingBasketReturnsNullAndDeleteReturnsFalse()
     {
         var repository = new RedisBasketRepository(
