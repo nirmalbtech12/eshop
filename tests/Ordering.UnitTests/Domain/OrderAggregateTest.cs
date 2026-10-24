@@ -175,4 +175,32 @@ public class OrderAggregateTest
         //Assert
         Assert.HasCount(expectedResult, fakeOrder.DomainEvents);
     }
+
+    [TestMethod]
+    public void Payment_status_is_pending_until_terminal_outcome()
+    {
+        var order = new OrderBuilder(new AddressBuilder().Build()).Build();
+        order.SetAwaitingValidationStatus();
+        order.SetStockConfirmedStatus();
+
+        Assert.AreEqual(OrderStatus.PaymentPending, order.OrderStatus);
+        Assert.AreEqual("Payment pending", order.OrderStatus.ToDisplayName());
+
+        order.SetPaidStatus();
+
+        Assert.AreEqual(OrderStatus.Paid, order.OrderStatus);
+        Assert.AreEqual("Paid", order.OrderStatus.ToDisplayName());
+    }
+
+    [TestMethod]
+    public void Failed_payment_exposes_cancelled_terminal_status()
+    {
+        var order = new OrderBuilder(new AddressBuilder().Build()).Build();
+        order.SetAwaitingValidationStatus();
+        order.SetStockConfirmedStatus();
+        order.SetCancelledStatus();
+
+        Assert.AreEqual(OrderStatus.Cancelled, order.OrderStatus);
+        Assert.AreEqual("Cancelled", order.OrderStatus.ToDisplayName());
+    }
 }

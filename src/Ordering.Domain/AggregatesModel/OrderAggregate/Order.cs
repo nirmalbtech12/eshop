@@ -111,14 +111,14 @@ public class Order
         {
             AddDomainEvent(new OrderStatusChangedToStockConfirmedDomainEvent(Id));
 
-            OrderStatus = OrderStatus.StockConfirmed;
-            Description = "All the items were confirmed with available stock.";
+            OrderStatus = OrderStatus.PaymentPending;
+            Description = "All items are in stock. Payment is pending.";
         }
     }
 
     public void SetPaidStatus()
     {
-        if (OrderStatus == OrderStatus.StockConfirmed)
+        if (OrderStatus == OrderStatus.PaymentPending || OrderStatus == OrderStatus.StockConfirmed)
         {
             AddDomainEvent(new OrderStatusChangedToPaidDomainEvent(Id, OrderItems));
 

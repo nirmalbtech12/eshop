@@ -2,6 +2,7 @@
 
 public class OrderStatusChangedToStockConfirmedIntegrationEventHandler(
     IEventBus eventBus,
+    IPaymentGateway paymentGateway,
     IOptionsMonitor<PaymentOptions> options,
     ILogger<OrderStatusChangedToStockConfirmedIntegrationEventHandler> logger) :
     IIntegrationEventHandler<OrderStatusChangedToStockConfirmedIntegrationEvent>
@@ -12,20 +13,39 @@ public class OrderStatusChangedToStockConfirmedIntegrationEventHandler(
 
         IntegrationEvent orderPaymentIntegrationEvent;
 
-        // Business feature comment:
-        // When OrderStatusChangedToStockConfirmed Integration Event is handled.
-        // Here we're simulating that we'd be performing the payment against any payment gateway
-        // Instead of a real payment we just take the env. var to simulate the payment 
-        // The payment can be successful or it can fail
+        var paymentSucceeded = false;
+        var idempotencyKey = $"order-{@event.OrderId}";
+        var retryCount = Math.Max(0, options.CurrentValue.MaxTimeoutRetries);
+        for (var attempt = 0; ; attempt++)
+        {
+            var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+            try
+            {
+                paymentSucceeded = await paymentGateway.ChargeAsync(@event.OrderId, idempotencyKey);
+                stopwatch.Stop();
+                logger.LogInformation("Payment gateway attempt completed for order {OrderId} in {GatewayLatencyMs} ms with outcome {PaymentOutcome}",
+                    @event.OrderId, stopwatch.Elapsed.TotalMilliseconds, paymentSucceeded ? "succeeded" : "failed");
+                break;
+            }
+            catch (TimeoutException ex) when (attempt < retryCount)
+            {
+                stopwatch.Stop();
+                logger.LogWarning(ex, "Payment gateway timeout for order {OrderId} after {GatewayLatencyMs} ms; retry {RetryAttempt} of {RetryCount}",
+                    @event.OrderId, stopwatch.Elapsed.TotalMilliseconds, attempt + 1, retryCount);
+                await Task.Delay(TimeSpan.FromMilliseconds(Math.Max(0, options.CurrentValue.RetryBackoffMilliseconds) * (attempt + 1)));
+            }
+            catch (TimeoutException ex)
+            {
+                stopwatch.Stop();
+                logger.LogError(ex, "Payment gateway timed out for order {OrderId} after {GatewayLatencyMs} ms; retries exhausted",
+                    @event.OrderId, stopwatch.Elapsed.TotalMilliseconds);
+                break;
+            }
+        }
 
-        if (options.CurrentValue.PaymentSucceeded)
-        {
-            orderPaymentIntegrationEvent = new OrderPaymentSucceededIntegrationEvent(@event.OrderId);
-        }
-        else
-        {
-            orderPaymentIntegrationEvent = new OrderPaymentFailedIntegrationEvent(@event.OrderId);
-        }
+        orderPaymentIntegrationEvent = paymentSucceeded
+            ? new OrderPaymentSucceededIntegrationEvent(@event.OrderId)
+            : new OrderPaymentFailedIntegrationEvent(@event.OrderId);
 
         logger.LogInformation("Publishing integration event: {IntegrationEventId} - ({@IntegrationEvent})", orderPaymentIntegrationEvent.Id, orderPaymentIntegrationEvent);
 
