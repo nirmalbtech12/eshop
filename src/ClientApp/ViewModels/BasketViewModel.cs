@@ -44,9 +44,10 @@ public partial class BasketViewModel : ViewModelBase
                         basketItem.PictureUrl = catalogItem.PictureUri;
                         basketItem.ProductName = catalogItem.Name;
                         basketItem.UnitPrice = catalogItem.Price;
-                        await AddBasketItemAsync(basketItem, innerList);
+                        innerList.Add(basketItem);
                     }
                 });
+            ReCalculateTotal();
         }
     }
 
@@ -55,6 +56,43 @@ public partial class BasketViewModel : ViewModelBase
     {
         return AddBasketItemAsync(item, _basketItems);
     }
+
+    public async Task UpdateQuantityAsync(BasketItem item, int quantity)
+    {
+        if (quantity < 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(quantity));
+        }
+
+        var basket = await _appEnvironmentService.BasketService.GetBasketAsync();
+        var displayedItem = _basketItems.FirstOrDefault(x => x.ProductId == item.ProductId);
+        if (displayedItem is null || basket is null)
+        {
+            return;
+        }
+
+        if (quantity == 0)
+        {
+            _basketItems.Remove(displayedItem);
+            basket.RemoveItemFromBasket(item);
+        }
+        else
+        {
+            displayedItem.Quantity = quantity;
+            var storedItem = basket.Items.FirstOrDefault(x => x.ProductId == item.ProductId);
+            if (storedItem is null) basket.AddItemToBasket(new BasketItem { ProductId = item.ProductId, Quantity = quantity });
+            else storedItem.Quantity = quantity;
+        }
+
+        await _appEnvironmentService.BasketService.UpdateBasketAsync(basket);
+        ReCalculateTotal();
+    }
+
+    [RelayCommand]
+    private Task IncreaseQuantityAsync(BasketItem item) => UpdateQuantityAsync(item, item.Quantity + 1);
+
+    [RelayCommand]
+    private Task DecreaseQuantityAsync(BasketItem item) => UpdateQuantityAsync(item, item.Quantity - 1);
 
     private async Task AddBasketItemAsync(BasketItem item, IList<BasketItem> basketItems)
     {

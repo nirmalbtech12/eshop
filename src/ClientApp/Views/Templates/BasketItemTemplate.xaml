@@ -88,10 +88,11 @@
                     Style="{StaticResource OrderItemUnitPriceStyle}"
                     Text="{Binding UnitPrice, StringFormat='${0:N2}'}" />
                 <!--  QUANTITY  -->
-                <Label
-                    Grid.Column="1"
-                    Style="{StaticResource QuantityStyle}"
-                    Text="{Binding Quantity}" />
+                <HorizontalStackLayout Grid.Column="1" HorizontalOptions="End" Spacing="8">
+                    <Button Text="−" Command="{Binding Source={RelativeSource AncestorType={x:Type vm:BasketViewModel}}, Path=DecreaseQuantityCommand, x:DataType=vm:BasketViewModel}" CommandParameter="{Binding}" />
+                    <Label Style="{StaticResource QuantityStyle}" Text="{Binding Quantity}" VerticalTextAlignment="Center" />
+                    <Button Text="+" Command="{Binding Source={RelativeSource AncestorType={x:Type vm:BasketViewModel}}, Path=IncreaseQuantityCommand, x:DataType=vm:BasketViewModel}" CommandParameter="{Binding}" />
+                </HorizontalStackLayout>
             </Grid>
             <!--  TOTAL  -->
             <Label

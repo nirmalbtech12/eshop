@@ -1,0 +1,5 @@
+<Project>
+  <PropertyGroup Condition="'$(TargetFrameworks)' != '' and '$(LemuPortableTargetFramework)' != ''">
+    <TargetFrameworks>$(LemuPortableTargetFramework)</TargetFrameworks>
+  </PropertyGroup>
+</Project>
