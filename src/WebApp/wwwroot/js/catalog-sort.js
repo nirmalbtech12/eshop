@@ -86,7 +86,9 @@
 
     function reflect(r, value) {
         const valueEl = r.querySelector('[data-catalog-sort-value]');
-        if (valueEl) valueEl.textContent = LABELS.get(value) || LABELS.get('name-asc');
+        const label = LABELS.get(value) || LABELS.get('name-asc');
+        if (valueEl) valueEl.textContent = label;
+        triggerOf(r).setAttribute('aria-valuetext', label);
         for (const opt of optionsOf(r)) {
             opt.setAttribute('aria-selected', opt.dataset.value === value ? 'true' : 'false');
         }

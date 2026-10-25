@@ -31,7 +31,8 @@
                     <h3>Brand</h3>
                     <div class="catalog-search-group-tags">
                         <a href="@BrandUri(null)"
-                           class="catalog-search-tag @(BrandActiveCount == 0 ? "active" : "")">
+                           class="catalog-search-tag @(BrandActiveCount == 0 ? "active" : "")"
+                           aria-label="All brands, @BrandCount(null) products">
                             <span>All</span>
                             <span class="catalog-search-tag-count">@BrandCount(null)</span>
                         </a>
@@ -42,7 +43,8 @@
                             var isEmpty = count == 0 && !isActive;
                             <a href="@BrandUri(brand.Id)"
                                class="catalog-search-tag @(isActive ? "active" : "") @(isEmpty ? "is-empty" : "")"
-                               aria-disabled="@(isEmpty ? "true" : null)">
+                               aria-disabled="@(isEmpty ? "true" : null)"
+                               aria-label="@($"{brand.Brand}, {count} products{(isActive ? ", selected" : "")}{(isEmpty ? ", unavailable" : "")}")">
                                 <span>@brand.Brand</span>
                                 <span class="catalog-search-tag-count">@count</span>
                             </a>
@@ -53,7 +55,8 @@
                     <h3>Type</h3>
                     <div class="catalog-search-group-tags">
                         <a href="@TypeUri(null)"
-                           class="catalog-search-tag @(TypeActiveCount == 0 ? "active" : "")">
+                           class="catalog-search-tag @(TypeActiveCount == 0 ? "active" : "")"
+                           aria-label="All types, @TypeCount(null) products">
                             <span>All</span>
                             <span class="catalog-search-tag-count">@TypeCount(null)</span>
                         </a>
@@ -64,7 +67,8 @@
                             var isEmpty = count == 0 && !isActive;
                             <a href="@TypeUri(itemType.Id)"
                                class="catalog-search-tag @(isActive ? "active" : "") @(isEmpty ? "is-empty" : "")"
-                               aria-disabled="@(isEmpty ? "true" : null)">
+                               aria-disabled="@(isEmpty ? "true" : null)"
+                               aria-label="@($"{itemType.Type}, {count} products{(isActive ? ", selected" : "")}{(isEmpty ? ", unavailable" : "")}")">
                                 <span>@itemType.Type</span>
                                 <span class="catalog-search-tag-count">@count</span>
                             </a>
