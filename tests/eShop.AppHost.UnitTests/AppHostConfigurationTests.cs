@@ -1,12 +1,43 @@
 using Aspire.Hosting;
 using eShop.AppHost;
 using Microsoft.Extensions.Configuration;
+using System.Diagnostics;
 
 namespace eShop.AppHost.UnitTests;
 
 [TestClass]
 public class AppHostConfigurationTests
 {
+    public TestContext TestContext { get; set; } = null!;
+
+    [TestMethod]
+    public async Task CatalogAccessibilityBrowserChecksPass()
+    {
+        var repo = Directory.GetCurrentDirectory();
+        while (!File.Exists(Path.Combine(repo, "package.json")) && Directory.GetParent(repo) is { } parent)
+        {
+            repo = parent.FullName;
+        }
+
+        Assert.IsTrue(File.Exists(Path.Combine(repo, "package.json")), "Repository root with package.json was not found.");
+        var start = new ProcessStartInfo("npx")
+        {
+            WorkingDirectory = repo,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false
+        };
+        start.ArgumentList.Add("playwright");
+        start.ArgumentList.Add("test");
+        start.ArgumentList.Add("e2e/CatalogAccessibilityTest.spec.ts");
+        using var process = Process.Start(start);
+        Assert.IsNotNull(process);
+        var stdout = process.StandardOutput.ReadToEndAsync(TestContext.CancellationToken);
+        var stderr = process.StandardError.ReadToEndAsync(TestContext.CancellationToken);
+        await Task.WhenAll(stdout, stderr, process.WaitForExitAsync(TestContext.CancellationToken));
+        Assert.AreEqual(0, process.ExitCode, $"Playwright browser check failed.\n{stdout.Result}\n{stderr.Result}");
+    }
+
     [TestMethod]
     [DataRow(null, false)]
     [DataRow("", false)]
