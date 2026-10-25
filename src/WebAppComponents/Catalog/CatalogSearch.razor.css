@@ -180,9 +180,8 @@
 
 /* Facets that would return zero in the current context: shown but not selectable. */
 .catalog-search-tag.is-empty {
-    opacity: 0.4;
+    color: var(--color-muted);
     cursor: not-allowed;
-    pointer-events: none;
     border-style: dashed;
 }
 

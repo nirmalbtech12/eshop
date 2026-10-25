@@ -31,7 +31,8 @@
                     <h3>Brand</h3>
                     <div class="catalog-search-group-tags">
                         <a href="@BrandUri(null)"
-                           class="catalog-search-tag @(BrandActiveCount == 0 ? "active" : "")">
+                           class="catalog-search-tag @(BrandActiveCount == 0 ? "active" : "")"
+                           aria-current="@(BrandActiveCount == 0 ? "true" : null)">
                             <span>All</span>
                             <span class="catalog-search-tag-count">@BrandCount(null)</span>
                         </a>
@@ -40,12 +41,22 @@
                             var count = BrandCount(brand.Id);
                             var isActive = IsBrandActive(brand.Id);
                             var isEmpty = count == 0 && !isActive;
-                            <a href="@BrandUri(brand.Id)"
-                               class="catalog-search-tag @(isActive ? "active" : "") @(isEmpty ? "is-empty" : "")"
-                               aria-disabled="@(isEmpty ? "true" : null)">
-                                <span>@brand.Brand</span>
-                                <span class="catalog-search-tag-count">@count</span>
-                            </a>
+                            @if (isEmpty)
+                            {
+                                <span class="catalog-search-tag is-empty" role="group" aria-disabled="true" aria-label="@($"{brand.Brand}, unavailable")">
+                                    <span>@brand.Brand</span>
+                                    <span class="catalog-search-tag-count">@count</span>
+                                </span>
+                            }
+                            else
+                            {
+                                <a href="@BrandUri(brand.Id)"
+                                   class="catalog-search-tag @(isActive ? "active" : "")"
+                                   aria-current="@(isActive ? "true" : null)">
+                                    <span>@brand.Brand</span>
+                                    <span class="catalog-search-tag-count">@count</span>
+                                </a>
+                            }
                         }
                     </div>
                 </div>
@@ -53,7 +64,8 @@
                     <h3>Type</h3>
                     <div class="catalog-search-group-tags">
                         <a href="@TypeUri(null)"
-                           class="catalog-search-tag @(TypeActiveCount == 0 ? "active" : "")">
+                           class="catalog-search-tag @(TypeActiveCount == 0 ? "active" : "")"
+                           aria-current="@(TypeActiveCount == 0 ? "true" : null)">
                             <span>All</span>
                             <span class="catalog-search-tag-count">@TypeCount(null)</span>
                         </a>
@@ -62,12 +74,22 @@
                             var count = TypeCount(itemType.Id);
                             var isActive = IsTypeActive(itemType.Id);
                             var isEmpty = count == 0 && !isActive;
-                            <a href="@TypeUri(itemType.Id)"
-                               class="catalog-search-tag @(isActive ? "active" : "") @(isEmpty ? "is-empty" : "")"
-                               aria-disabled="@(isEmpty ? "true" : null)">
-                                <span>@itemType.Type</span>
-                                <span class="catalog-search-tag-count">@count</span>
-                            </a>
+                            @if (isEmpty)
+                            {
+                                <span class="catalog-search-tag is-empty" role="group" aria-disabled="true" aria-label="@($"{itemType.Type}, unavailable")">
+                                    <span>@itemType.Type</span>
+                                    <span class="catalog-search-tag-count">@count</span>
+                                </span>
+                            }
+                            else
+                            {
+                                <a href="@TypeUri(itemType.Id)"
+                                   class="catalog-search-tag @(isActive ? "active" : "")"
+                                   aria-current="@(isActive ? "true" : null)">
+                                    <span>@itemType.Type</span>
+                                    <span class="catalog-search-tag-count">@count</span>
+                                </a>
+                            }
                         }
                     </div>
                 </div>
