@@ -28,6 +28,24 @@ public sealed class OrderingApiFixture : WebApplicationFactory<Program>, IAsyncL
 
     protected override IHost CreateHost(IHostBuilder builder)
     {
+        ConfigureOrderingHost(builder);
+        return base.CreateHost(builder);
+    }
+
+    public WebApplicationFactory<Program> CreateOrderingApiFactory(IStartupFilter? additionalStartupFilter = null)
+    {
+        return new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+        {
+            ConfigureOrderingWebHost(builder);
+            if (additionalStartupFilter is not null)
+            {
+                builder.ConfigureServices(services => services.AddSingleton(additionalStartupFilter));
+            }
+        });
+    }
+
+    private void ConfigureOrderingHost(IHostBuilder builder)
+    {
         builder.ConfigureHostConfiguration(config =>
         {
             config.AddInMemoryCollection(new Dictionary<string, string>
@@ -36,11 +54,36 @@ public sealed class OrderingApiFixture : WebApplicationFactory<Program>, IAsyncL
                 { "Identity:Url", IdentityApi.GetEndpoint("http").Url }
             });
         });
+        ConfigureOrderingServices(builder);
+    }
+
+    private void ConfigureOrderingWebHost(IWebHostBuilder builder)
+    {
+        builder.ConfigureAppConfiguration((_, config) =>
+        {
+            config.AddInMemoryCollection(new Dictionary<string, string>
+            {
+                { $"ConnectionStrings:{Postgres.Resource.Name}", _postgresConnectionString },
+                { "Identity:Url", IdentityApi.GetEndpoint("http").Url }
+            });
+        });
+        ConfigureOrderingServices(builder);
+    }
+
+    private static void ConfigureOrderingServices(IHostBuilder builder)
+    {
         builder.ConfigureServices(services =>
         {
             services.AddSingleton<IStartupFilter>(new AutoAuthorizeStartupFilter());
         });
-        return base.CreateHost(builder);
+    }
+
+    private static void ConfigureOrderingServices(IWebHostBuilder builder)
+    {
+        builder.ConfigureServices(services =>
+        {
+            services.AddSingleton<IStartupFilter>(new AutoAuthorizeStartupFilter());
+        });
     }
 
     public new async Task DisposeAsync()

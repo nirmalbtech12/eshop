@@ -5,15 +5,10 @@ public class IntegrationEventLogService<TContext> : IIntegrationEventLogService,
 {
     private volatile bool _disposedValue;
     private readonly TContext _context;
-    private readonly Type[] _eventTypes;
 
     public IntegrationEventLogService(TContext context)
     {
         _context = context;
-        _eventTypes = Assembly.Load(Assembly.GetEntryAssembly().FullName)
-            .GetTypes()
-            .Where(t => t.Name.EndsWith(nameof(IntegrationEvent)))
-            .ToArray();
     }
 
     public async Task<IEnumerable<IntegrationEventLogEntry>> RetrieveEventLogsPendingToPublishAsync(Guid transactionId)
@@ -25,7 +20,9 @@ public class IntegrationEventLogService<TContext> : IIntegrationEventLogService,
         if (result.Count != 0)
         {
             return result.OrderBy(o => o.CreationTime)
-                .Select(e => e.DeserializeJsonContent(_eventTypes.FirstOrDefault(t => t.Name == e.EventTypeShortName)));
+                .Select(e => e.DeserializeJsonContent(AppDomain.CurrentDomain.GetAssemblies()
+                    .Select(assembly => assembly.GetType(e.EventTypeName, throwOnError: false))
+                    .FirstOrDefault(type => type is not null)));
         }
 
         return [];

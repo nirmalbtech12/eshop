@@ -1,22 +1,29 @@
 ﻿using System.Net;
+using System.IO;
 using System.Text;
 using System.Text.Json;
+using System.Threading;
 using Asp.Versioning;
 using Asp.Versioning.Http;
 using eShop.Ordering.API.Application.Commands;
 using eShop.Ordering.API.Application.Models;
 using eShop.Ordering.API.Application.Queries;
+using eShop.Ordering.Infrastructure;
+using eShop.Ordering.Infrastructure.Idempotency;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Mvc.Testing;
 
 namespace eShop.Ordering.FunctionalTests;
 
 public sealed class OrderingApiTests : IClassFixture<OrderingApiFixture>
 {
+    private readonly OrderingApiFixture _fixture;
     private readonly WebApplicationFactory<Program> _webApplicationFactory;
     private readonly HttpClient _httpClient;
 
     public OrderingApiTests(OrderingApiFixture fixture)
     {
+        _fixture = fixture;
         var handler = new ApiVersionHandler(new QueryStringApiVersionWriter(), new ApiVersion(1.0));
 
         _webApplicationFactory = fixture;
@@ -110,7 +117,7 @@ public sealed class OrderingApiTests : IClassFixture<OrderingApiFixture>
     public async Task GetStoredOrdersWithOrderId()
     {
         // Act
-        var response = await _httpClient.GetAsync("api/orders/1", TestContext.Current.CancellationToken);
+        var response = await _httpClient.GetAsync("api/orders/2147483647", TestContext.Current.CancellationToken);
         var responseStatus = response.StatusCode;
 
         // Assert
@@ -157,6 +164,125 @@ public sealed class OrderingApiTests : IClassFixture<OrderingApiFixture>
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task RetryingOrderAfterOrderingRestartKeepsOnePersistedOrder()
+    {
+        var item = new BasketItem
+        {
+            Id = "1",
+            ProductId = 12,
+            ProductName = "Restart test",
+            UnitPrice = 10,
+            OldUnitPrice = 9,
+            Quantity = 1,
+            PictureUrl = null
+        };
+        var request = new CreateOrderRequest("restart-test-" + Guid.NewGuid(), "Restart Test", "Seattle", "1 Main St", "WA", "USA", "98101",
+            "XXXXXXXXXXXX0005", "Restart Test", DateTime.UtcNow.AddYears(1), "123", 1, null, new List<BasketItem> { item });
+        var requestId = Guid.NewGuid();
+
+        var heldResponse = new HoldOrderResponseStartupFilter();
+        var restartableFactory = _fixture.CreateOrderingApiFactory(heldResponse);
+        var restartableClient = restartableFactory.CreateDefaultClient(new ApiVersionHandler(new QueryStringApiVersionWriter(), new ApiVersion(1.0)));
+        var restartableFactoryDisposed = false;
+        HttpRequestMessage CreateOrderRequest()
+        {
+            var content = new StringContent(JsonSerializer.Serialize(request), UTF8Encoding.UTF8, "application/json");
+            content.Headers.Add("x-requestid", requestId.ToString());
+            return new HttpRequestMessage(HttpMethod.Post, "api/orders") { Content = content };
+        }
+
+        try
+        {
+            using var submissionCancellation = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
+            using var initialRequest = CreateOrderRequest();
+            var submission = restartableClient.SendAsync(initialRequest, submissionCancellation.Token);
+            await heldResponse.ResponseHeld.WaitAsync(TimeSpan.FromSeconds(30), TestContext.Current.CancellationToken);
+
+            await using (var scope = restartableFactory.Services.CreateAsyncScope())
+            {
+                var context = scope.ServiceProvider.GetRequiredService<OrderingContext>();
+                Assert.Equal(1, await context.Orders.CountAsync(
+                    order => order.Buyer.IdentityGuid == request.UserId, TestContext.Current.CancellationToken));
+                Assert.Equal(1, await context.Set<ClientRequest>().CountAsync(
+                    clientRequest => clientRequest.Id == requestId, TestContext.Current.CancellationToken));
+            }
+
+            Assert.False(submission.IsCompleted);
+
+            // The order is committed, but the checkout caller has not received its
+            // response. Stop Ordering at this boundary to simulate a lost response.
+            await restartableFactory.DisposeAsync();
+            restartableFactoryDisposed = true;
+            heldResponse.Release();
+            await Assert.ThrowsAnyAsync<Exception>(() => submission);
+        }
+        finally
+        {
+            heldResponse.Release();
+            restartableClient.Dispose();
+            if (!restartableFactoryDisposed)
+            {
+                await restartableFactory.DisposeAsync();
+            }
+        }
+
+        await using var restartedFactory = _fixture.CreateOrderingApiFactory();
+        using var restartedClient = restartedFactory.CreateDefaultClient(new ApiVersionHandler(new QueryStringApiVersionWriter(), new ApiVersion(1.0)));
+        using var retryRequest = CreateOrderRequest();
+        var retryResponse = await restartedClient.SendAsync(retryRequest, TestContext.Current.CancellationToken);
+        retryResponse.EnsureSuccessStatusCode();
+
+        await using var restartedScope = restartedFactory.Services.CreateAsyncScope();
+        var restartedContext = restartedScope.ServiceProvider.GetRequiredService<OrderingContext>();
+        Assert.Equal(1, await restartedContext.Orders.CountAsync(
+            order => order.Buyer.IdentityGuid == request.UserId, TestContext.Current.CancellationToken));
+        Assert.Equal(1, await restartedContext.Set<ClientRequest>().CountAsync(
+            clientRequest => clientRequest.Id == requestId, TestContext.Current.CancellationToken));
+    }
+
+    private sealed class HoldOrderResponseStartupFilter : IStartupFilter
+    {
+        private readonly TaskCompletionSource _responseHeld = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource _release = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public Task ResponseHeld => _responseHeld.Task;
+        public void Release() => _release.TrySetResult();
+
+        public Action<IApplicationBuilder> Configure(Action<IApplicationBuilder> next) => app =>
+        {
+            app.Use(async (context, nextMiddleware) =>
+            {
+                if (HttpMethods.IsPost(context.Request.Method) && context.Request.Path.StartsWithSegments("/api/orders"))
+                {
+                    var originalBody = context.Response.Body;
+                    await using var bufferedBody = new MemoryStream();
+                    context.Response.Body = bufferedBody;
+                    try
+                    {
+                        await nextMiddleware(context);
+                        _responseHeld.TrySetResult();
+                        await _release.Task.WaitAsync(context.RequestAborted);
+                        if (!context.RequestAborted.IsCancellationRequested)
+                        {
+                            bufferedBody.Position = 0;
+                            await bufferedBody.CopyToAsync(originalBody, context.RequestAborted);
+                        }
+                    }
+                    finally
+                    {
+                        context.Response.Body = originalBody;
+                    }
+                }
+                else
+                {
+                    await nextMiddleware(context);
+                }
+            });
+            next(app);
+        };
     }
 
     [Fact]

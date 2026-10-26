@@ -1,4 +1,5 @@
 using Aspire.Hosting;
+using Aspire.Hosting.Testing;
 using eShop.AppHost;
 using Microsoft.Extensions.Configuration;
 
@@ -48,6 +49,33 @@ public class AppHostConfigurationTests
         CollectionAssert.IsSubsetOf(
             new[] { "ollama", "embedding", "chat" },
             builder.Resources.Select(resource => resource.Name).ToArray());
+    }
+
+    [TestMethod]
+    public void CheckoutServicesDeclareHealthAndReadinessDependencies()
+    {
+        var appHost = File.ReadAllText(Path.Combine(FindRepositoryRoot(), "src", "eShop.AppHost", "Program.cs"));
+
+        StringAssert.Contains(appHost, "basketApi = builder.AddProject<Projects.Basket_API>(\"basket-api\")");
+        StringAssert.Contains(appHost, ".WithHttpHealthCheck(\"/health\")");
+        StringAssert.Contains(appHost, ".WaitFor(basketApi)");
+        StringAssert.Contains(appHost, ".WaitFor(orderingApi)");
+    }
+
+    [TestMethod]
+    [Timeout(240000)]
+    public async Task AspireRunWaitsForCheckoutResourcesAndWebApp()
+    {
+        var appBuilder = await DistributedApplicationTestingBuilder.CreateAsync<Projects.eShop_AppHost>();
+        await using var app = await appBuilder.BuildAsync();
+        await app.StartAsync();
+
+        await app.ResourceNotifications.WaitForResourceHealthyAsync("basket-api");
+        await app.ResourceNotifications.WaitForResourceHealthyAsync("ordering-api");
+
+        using var webClient = app.CreateHttpClient("webapp");
+        using var response = await webClient.GetAsync("/");
+        Assert.IsTrue(response.IsSuccessStatusCode, $"WebApp returned {(int)response.StatusCode} ({response.StatusCode}).");
     }
 
     private static IDistributedApplicationBuilder CreateBuilder() =>
