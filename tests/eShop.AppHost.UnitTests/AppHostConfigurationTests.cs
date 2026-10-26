@@ -1,4 +1,5 @@
 using Aspire.Hosting;
+using Aspire.Hosting.Testing;
 using eShop.AppHost;
 using Microsoft.Extensions.Configuration;
 
@@ -7,6 +8,18 @@ namespace eShop.AppHost.UnitTests;
 [TestClass]
 public class AppHostConfigurationTests
 {
+    [TestMethod]
+    public async Task AspireAppHostWaitsForOrderingApiHealthBeforeMobileBff()
+    {
+        using var timeout = new CancellationTokenSource(TimeSpan.FromMinutes(3));
+        await using var builder = await DistributedApplicationTestingBuilder.CreateAsync<Projects.eShop_AppHost>(timeout.Token);
+        await using var app = await builder.BuildAsync(timeout.Token);
+
+        await app.StartAsync(timeout.Token);
+        await app.ResourceNotifications.WaitForResourceHealthyAsync("ordering-api", timeout.Token);
+        await app.ResourceNotifications.WaitForResourceHealthyAsync("mobile-bff", timeout.Token);
+    }
+
     [TestMethod]
     [DataRow(null, false)]
     [DataRow("", false)]

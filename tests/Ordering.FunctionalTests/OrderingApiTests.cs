@@ -1,26 +1,102 @@
 ﻿using System.Net;
 using System.Text;
 using System.Text.Json;
+using System.Threading;
 using Asp.Versioning;
 using Asp.Versioning.Http;
 using eShop.Ordering.API.Application.Commands;
 using eShop.Ordering.API.Application.Models;
 using eShop.Ordering.API.Application.Queries;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Npgsql;
 
 namespace eShop.Ordering.FunctionalTests;
 
 public sealed class OrderingApiTests : IClassFixture<OrderingApiFixture>
 {
-    private readonly WebApplicationFactory<Program> _webApplicationFactory;
-    private readonly HttpClient _httpClient;
+    private readonly OrderingApiFixture _fixture;
 
     public OrderingApiTests(OrderingApiFixture fixture)
     {
         var handler = new ApiVersionHandler(new QueryStringApiVersionWriter(), new ApiVersion(1.0));
 
-        _webApplicationFactory = fixture;
-        _httpClient = _webApplicationFactory.CreateDefaultClient(handler);
+        _fixture = fixture;
+        _httpClient = fixture.Api.CreateDefaultClient(handler);
+    }
+
+    private HttpClient _httpClient;
+
+    [Fact]
+    public async Task CheckoutRetryAfterApiRestartKeepsSingleOrderAndHealth()
+    {
+        var requestId = Guid.NewGuid();
+        var userId = requestId.ToString("N");
+        var street = $"restart-{userId}";
+        var orderRequest = new CreateOrderRequest(userId, "TestUser", "Seattle", street, "WA", "US", "98101", "XXXXXXXXXXXX0005", "Test User", DateTime.UtcNow.AddYears(1), "123", 1, "test buyer",
+            [new BasketItem { Id = "restart-test", ProductId = 12, ProductName = "Restart Test", UnitPrice = 173.29m, OldUnitPrice = 150, Quantity = 1 }]);
+
+        async Task<HttpResponseMessage> SubmitCheckout() => await _httpClient.PostAsync("api/orders", new StringContent(JsonSerializer.Serialize(orderRequest), UTF8Encoding.UTF8, "application/json")
+        {
+            Headers = { { "x-requestid", requestId.ToString() } }
+        }, TestContext.Current.CancellationToken);
+
+        await using var database = new NpgsqlConnection(_fixture.PostgresConnectionString);
+        await database.OpenAsync(TestContext.Current.CancellationToken);
+        _fixture.CheckoutRestart.Enabled = true;
+        var interruptedCheckout = SubmitCheckout();
+        await _fixture.CheckoutRestart.OrderAdded.Task.WaitAsync(TimeSpan.FromSeconds(20), TestContext.Current.CancellationToken);
+        await _fixture.RestartApiAsync();
+        try
+        {
+            using var interruptedResponse = await interruptedCheckout.WaitAsync(TimeSpan.FromSeconds(20), TestContext.Current.CancellationToken);
+            Assert.Equal(HttpStatusCode.InternalServerError, interruptedResponse.StatusCode);
+        }
+        catch (TaskCanceledException)
+        {
+        }
+
+        Assert.Equal(0, await CountRequestAsync(database, requestId, TestContext.Current.CancellationToken));
+        Assert.Equal(0, await CountOrdersAsync(database, street, TestContext.Current.CancellationToken));
+        Assert.Equal(0, await CountUserEventsAsync(database, userId, TestContext.Current.CancellationToken));
+        _httpClient.Dispose();
+        _httpClient = _fixture.Api.CreateDefaultClient(new ApiVersionHandler(new QueryStringApiVersionWriter(), new ApiVersion(1.0)));
+
+        var healthResponse = await _httpClient.GetAsync("health", TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.OK, healthResponse.StatusCode);
+        var retryResponse = await SubmitCheckout();
+        Assert.Equal(HttpStatusCode.OK, retryResponse.StatusCode);
+
+        Assert.Equal(1, await CountRequestAsync(database, requestId, TestContext.Current.CancellationToken));
+        Assert.Equal(1, await CountOrdersAsync(database, street, TestContext.Current.CancellationToken));
+        Assert.True(await CountDurableEventsAsync(database, userId, TestContext.Current.CancellationToken) >= 1);
+    }
+
+    private static async Task<int> CountRequestAsync(NpgsqlConnection database, Guid requestId, CancellationToken cancellationToken)
+    {
+        await using var command = new NpgsqlCommand("SELECT COUNT(*) FROM ordering.requests WHERE \"Id\" = @id;", database);
+        command.Parameters.AddWithValue("id", requestId);
+        return Convert.ToInt32(await command.ExecuteScalarAsync(cancellationToken));
+    }
+
+    private static async Task<int> CountOrdersAsync(NpgsqlConnection database, string street, CancellationToken cancellationToken)
+    {
+        await using var command = new NpgsqlCommand("SELECT COUNT(*) FROM ordering.orders WHERE \"Address_Street\" = @street;", database);
+        command.Parameters.AddWithValue("street", street);
+        return Convert.ToInt32(await command.ExecuteScalarAsync(cancellationToken));
+    }
+
+    private static async Task<int> CountDurableEventsAsync(NpgsqlConnection database, string userId, CancellationToken cancellationToken)
+    {
+        await using var command = new NpgsqlCommand("SELECT COUNT(*) FROM ordering.\"IntegrationEventLog\" WHERE \"Content\" LIKE @userId AND \"State\" = 2;", database);
+        command.Parameters.AddWithValue("userId", $"%{userId}%");
+        return Convert.ToInt32(await command.ExecuteScalarAsync(cancellationToken));
+    }
+
+    private static async Task<int> CountUserEventsAsync(NpgsqlConnection database, string userId, CancellationToken cancellationToken)
+    {
+        await using var command = new NpgsqlCommand("SELECT COUNT(*) FROM ordering.\"IntegrationEventLog\" WHERE \"Content\" LIKE @userId;", database);
+        command.Parameters.AddWithValue("userId", $"%{userId}%");
+        return Convert.ToInt32(await command.ExecuteScalarAsync(cancellationToken));
     }
 
     [Fact]
@@ -110,7 +186,7 @@ public sealed class OrderingApiTests : IClassFixture<OrderingApiFixture>
     public async Task GetStoredOrdersWithOrderId()
     {
         // Act
-        var response = await _httpClient.GetAsync("api/orders/1", TestContext.Current.CancellationToken);
+        var response = await _httpClient.GetAsync($"api/orders/{int.MaxValue}", TestContext.Current.CancellationToken);
         var responseStatus = response.StatusCode;
 
         // Assert

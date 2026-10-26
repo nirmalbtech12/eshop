@@ -143,6 +143,12 @@ Use [`aspire publish`](https://aspire.dev/reference/cli/commands/aspire-publish/
 
 When you no longer need the deployment, run [`aspire destroy`](https://aspire.dev/reference/cli/commands/aspire-destroy/). This deletes the entire configured resource group, including resources that Aspire did not create, so review the target carefully before confirming.
 
+### Recovering from an interrupted checkout
+
+The AppHost keeps PostgreSQL and RabbitMQ resources persistent during local runs. Ordering API exposes `/health`; the WebApp and Mobile BFF wait for that health check before starting, so traffic through either path is held until Ordering API is ready. After a restart, confirm `ordering-api` and `mobile-bff` are ready in the Aspire dashboard before accepting checkout traffic.
+
+Retry the checkout with its original `x-requestid` value. Ordering stores request IDs, orders, and integration event log entries in PostgreSQL in the checkout transaction, so a retry after an interrupted transaction can safely complete the checkout. Confirm the order in the Orders API, inspect the event log state in `ordering.IntegrationEventLog`, and check that OrderProcessor returns to healthy in the dashboard. Start the local environment with `aspire run`.
+
 ## Contributing
 
 For more information on contributing to this repo, read [the contribution documentation](./CONTRIBUTING.md) and [the Code of Conduct](CODE-OF-CONDUCT.md).

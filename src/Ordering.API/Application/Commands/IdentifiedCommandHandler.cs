@@ -96,6 +96,10 @@ public abstract class IdentifiedCommandHandler<T, R> : IRequestHandler<Identifie
 
                 return result;
             }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
             catch
             {
                 return default;

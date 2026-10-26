@@ -60,7 +60,9 @@ var webHooksApi = builder.AddProject<Projects.Webhooks_API>("webhooks-api")
 // Reverse proxies
 builder.AddYarp("mobile-bff")
     .WithExternalHttpEndpoints()
-    .ConfigureMobileBffRoutes(catalogApi, orderingApi, identityApi);
+    .ConfigureMobileBffRoutes(catalogApi, orderingApi, identityApi)
+    .WithReference(orderingApi)
+    .WaitFor(orderingApi);
 
 // Apps
 var webhooksClient = builder.AddProject<Projects.WebhookClient>("webhooksclient", launchProfileName)
@@ -72,7 +74,7 @@ var webApp = builder.AddProject<Projects.WebApp>("webapp", launchProfileName)
     .WithUrls(c => c.Urls.ForEach(u => u.DisplayText = $"Online Store ({u.Endpoint?.EndpointName})"))
     .WithReference(basketApi)
     .WithReference(catalogApi)
-    .WithReference(orderingApi)
+    .WithReference(orderingApi).WaitFor(orderingApi)
     .WithReference(rabbitMq).WaitFor(rabbitMq)
     .WaitFor(identityApi)
     .WithEnvironment("IdentityUrl", identityEndpoint);
