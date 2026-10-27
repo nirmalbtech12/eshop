@@ -1,7 +1,10 @@
 ﻿using Aspire.Hosting;
+#nullable enable
 using Aspire.Hosting.ApplicationModel;
+using System.IO;
 
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Hosting;
 
 namespace eShop.Ordering.FunctionalTests;
@@ -14,7 +17,7 @@ public sealed class OrderingApiFixture : WebApplicationFactory<Program>, IAsyncL
     public IResourceBuilder<PostgresServerResource> IdentityDB { get; private set; }
     public IResourceBuilder<ProjectResource> IdentityApi { get; private set; }
 
-    private string _postgresConnectionString;
+    private string? _postgresConnectionString;
 
     public OrderingApiFixture()
     {
@@ -30,7 +33,7 @@ public sealed class OrderingApiFixture : WebApplicationFactory<Program>, IAsyncL
     {
         builder.ConfigureHostConfiguration(config =>
         {
-            config.AddInMemoryCollection(new Dictionary<string, string>
+            config.AddInMemoryCollection(new Dictionary<string, string?>
             {
                 { $"ConnectionStrings:{Postgres.Resource.Name}", _postgresConnectionString },
                 { "Identity:Url", IdentityApi.GetEndpoint("http").Url }
@@ -63,13 +66,68 @@ public sealed class OrderingApiFixture : WebApplicationFactory<Program>, IAsyncL
         _postgresConnectionString = await Postgres.Resource.GetConnectionStringAsync();
     }
 
-    private class AutoAuthorizeStartupFilter : IStartupFilter
+    public WebApplicationFactory<Program> CreateOrderingApiFactory(CheckoutRequestGate? gate = null) =>
+        new RestartableOrderingApiFactory(
+            _postgresConnectionString ?? throw new InvalidOperationException("The Ordering database is not initialized."),
+            IdentityApi.GetEndpoint("http").Url,
+            gate);
+
+    public sealed class CheckoutRequestGate
+    {
+        public TaskCompletionSource RequestCommitted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource Release { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    }
+
+    private sealed class RestartableOrderingApiFactory(string postgresConnectionString, string identityUrl, CheckoutRequestGate? gate) : WebApplicationFactory<Program>
+    {
+        protected override void ConfigureWebHost(IWebHostBuilder builder)
+        {
+            builder.ConfigureAppConfiguration((_, config) => config.AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                { "ConnectionStrings:OrderingDB", postgresConnectionString },
+                { "Identity:Url", identityUrl }
+            }));
+            builder.ConfigureServices(services => services.AddSingleton<IStartupFilter>(new AutoAuthorizeStartupFilter(gate)));
+        }
+    }
+
+    private class AutoAuthorizeStartupFilter(CheckoutRequestGate? gate = null) : IStartupFilter
     {
         public Action<IApplicationBuilder> Configure(Action<IApplicationBuilder> next)
         {
             return builder =>
             {
                 builder.UseMiddleware<AutoAuthorizeMiddleware>();
+                if (gate is not null)
+                {
+                    builder.Use(async (context, next) =>
+                    {
+                        if (HttpMethods.IsPost(context.Request.Method)
+                            && context.Request.Path.StartsWithSegments("/api/orders")
+                            && context.Request.Headers.ContainsKey("x-test-hold-checkout"))
+                        {
+                            var responseBody = context.Response.Body;
+                            await using var bufferedBody = new MemoryStream();
+                            context.Response.Body = bufferedBody;
+                            try
+                            {
+                                await next(context);
+                                gate.RequestCommitted.TrySetResult();
+                                await gate.Release.Task.WaitAsync(context.RequestAborted);
+                                bufferedBody.Position = 0;
+                                await bufferedBody.CopyToAsync(responseBody, context.RequestAborted);
+                            }
+                            finally
+                            {
+                                context.Response.Body = responseBody;
+                            }
+
+                            return;
+                        }
+
+                        await next(context);
+                    });
+                }
                 next(builder);
             };
         }

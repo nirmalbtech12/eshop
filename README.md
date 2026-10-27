@@ -69,6 +69,19 @@ aspire ps
 
 When you are finished, run `aspire stop`. See the [`aspire start` command](https://aspire.dev/reference/cli/commands/aspire-start/) for details.
 
+To validate local Aspire startup and checkout recovery, run the readiness smoke check and the Ordering API restart test from the repository root:
+
+```console
+dotnet test tests/eShop.AppHost.UnitTests/eShop.AppHost.UnitTests.csproj --filter FullyQualifiedName~LocalAspireRunReachesServiceReadiness
+dotnet test tests/Ordering.FunctionalTests/Ordering.FunctionalTests.csproj --filter FullyQualifiedName~CheckoutRestartPreservesOrderAndRetryDoesNotDuplicate
+```
+
+#### Recovering from an Ordering API restart during checkout
+
+Ordering API saves the order and its integration event in one PostgreSQL transaction. If the API stops before the client receives a response, first let Aspire restart it and wait until `ordering-api` is healthy in the dashboard. Then retry the same checkout request with the same `x-requestid` value. The request ID is the idempotency key; a retry with a new value can create another order.
+
+To verify the result locally, open the Aspire dashboard and inspect the `orderingdb` PostgreSQL resource, or use the Orders API to confirm the order is present. Keep the persistent PostgreSQL resource running while restarting the API. Stopping the AppHost also stops its local dependencies; do not remove the PostgreSQL volume or run `aspire down` when you need to retain local orders.
+
 #### From Visual Studio
 
 1. Open `eShop.Web.slnf`.

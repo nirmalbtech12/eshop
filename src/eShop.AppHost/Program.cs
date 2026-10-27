@@ -1,4 +1,7 @@
 ﻿using eShop.AppHost;
+using System.Net;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
 
 var builder = DistributedApplication.CreateBuilder(args);
 
@@ -28,20 +31,25 @@ var identityApi = builder.AddProject<Projects.Identity_API>("identity-api", laun
 
 var identityEndpoint = identityApi.GetEndpoint(launchProfileName);
 
-var basketApi = builder.AddProject<Projects.Basket_API>("basket-api")
-    .WithReference(redis)
+var basketApi = builder.AddProject<Projects.Basket_API>("basket-api", "http")
+    .WithReference(redis).WaitFor(redis)
     .WithReference(rabbitMq).WaitFor(rabbitMq)
     .WithEnvironment("Identity__Url", identityEndpoint);
+var basketHealthCheck = new BasketApiHealthCheck(basketApi.GetEndpoint("http"));
+builder.Services.AddHealthChecks().AddCheck("basket-api-http2", basketHealthCheck);
+basketApi.WithHealthCheck("basket-api-http2");
 redis.WithParentRelationship(basketApi);
 
-var catalogApi = builder.AddProject<Projects.Catalog_API>("catalog-api")
+var catalogApi = builder.AddProject<Projects.Catalog_API>("catalog-api", "http")
     .WithReference(rabbitMq).WaitFor(rabbitMq)
-    .WithReference(catalogDb);
+    .WithReference(catalogDb)
+    .WithHttpHealthCheck("/health");
 
-var orderingApi = builder.AddProject<Projects.Ordering_API>("ordering-api")
+var orderingApi = builder.AddProject<Projects.Ordering_API>("ordering-api", "http")
     .WithReference(rabbitMq).WaitFor(rabbitMq)
     .WithReference(orderDb).WaitFor(orderDb)
     .WithHttpHealthCheck("/health")
+    .WaitFor(identityApi)
     .WithEnvironment("Identity__Url", identityEndpoint);
 
 builder.AddProject<Projects.OrderProcessor>("order-processor")
@@ -52,9 +60,11 @@ builder.AddProject<Projects.OrderProcessor>("order-processor")
 builder.AddProject<Projects.PaymentProcessor>("payment-processor")
     .WithReference(rabbitMq).WaitFor(rabbitMq);
 
-var webHooksApi = builder.AddProject<Projects.Webhooks_API>("webhooks-api")
+var webHooksApi = builder.AddProject<Projects.Webhooks_API>("webhooks-api", "http")
     .WithReference(rabbitMq).WaitFor(rabbitMq)
     .WithReference(webhooksDb)
+    .WithHttpHealthCheck("/health")
+    .WaitFor(identityApi)
     .WithEnvironment("Identity__Url", identityEndpoint);
 
 // Reverse proxies
@@ -65,14 +75,19 @@ builder.AddYarp("mobile-bff")
 // Apps
 var webhooksClient = builder.AddProject<Projects.WebhookClient>("webhooksclient", launchProfileName)
     .WithReference(webHooksApi)
+    .WaitFor(webHooksApi)
     .WithEnvironment("IdentityUrl", identityEndpoint);
 
 var webApp = builder.AddProject<Projects.WebApp>("webapp", launchProfileName)
     .WithExternalHttpEndpoints()
+    .WithHttpHealthCheck("/health")
     .WithUrls(c => c.Urls.ForEach(u => u.DisplayText = $"Online Store ({u.Endpoint?.EndpointName})"))
     .WithReference(basketApi)
+    .WaitFor(basketApi)
     .WithReference(catalogApi)
+    .WaitFor(catalogApi)
     .WithReference(orderingApi)
+    .WaitFor(orderingApi)
     .WithReference(rabbitMq).WaitFor(rabbitMq)
     .WaitFor(identityApi)
     .WithEnvironment("IdentityUrl", identityEndpoint);
@@ -113,4 +128,30 @@ static bool ShouldUseHttpForEndpoints()
 
     // Attempt to parse the environment variable value; return true if it's exactly "1".
     return int.TryParse(envValue, out int result) && result == 1;
+}
+
+sealed class BasketApiHealthCheck(EndpointReference endpoint) : IHealthCheck
+{
+    private static readonly HttpClient s_client = new();
+
+    public async Task<HealthCheckResult> CheckHealthAsync(HealthCheckContext context, CancellationToken cancellationToken = default)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Get, new Uri(new Uri(endpoint.Url), "/health"))
+        {
+            Version = HttpVersion.Version20,
+            VersionPolicy = HttpVersionPolicy.RequestVersionExact
+        };
+
+        try
+        {
+            using var response = await s_client.SendAsync(request, cancellationToken);
+            return response.IsSuccessStatusCode
+                ? HealthCheckResult.Healthy()
+                : HealthCheckResult.Unhealthy($"Basket API health endpoint returned {(int)response.StatusCode}.");
+        }
+        catch (HttpRequestException exception)
+        {
+            return HealthCheckResult.Unhealthy("Basket API health endpoint could not be reached.", exception);
+        }
+    }
 }
