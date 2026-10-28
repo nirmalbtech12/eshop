@@ -1,4 +1,4 @@
-﻿@page "/checkout"
+@page "/checkout"
 @using System.Globalization
 @using System.ComponentModel.DataAnnotations
 @inject BasketState Basket
@@ -11,6 +11,7 @@
 <div class='checkout'>
     <EditForm EditContext="@editContext" FormName="checkout" OnSubmit="@HandleSubmitAsync" Enhance>
         <DataAnnotationsValidator />
+        <input type="hidden" name="Info.RequestId" value="@Info.RequestId" />
         <div class="form">
             <div class="form-section">
                 <h2>Shipping address</h2>
@@ -62,6 +63,10 @@
 </div>
 
 @code {
+    private string AttemptCookie => "checkout-attempt-" + Convert.ToHexString(
+        System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(
+            HttpContext.User.FindFirst("sub")?.Value ?? HttpContext.User.Identity?.Name ?? "")));
+
     private EditContext editContext = default!;
     private ValidationMessageStore extraMessages = default!;
 
@@ -91,8 +96,14 @@
             State = ReadClaim("address_state"),
             Country = ReadClaim("address_country"),
             ZipCode = ReadClaim("address_zip_code"),
-            RequestId = Guid.NewGuid()
+            RequestId = Guid.TryParse(HttpContext.Request.Cookies[AttemptCookie], out var attempt) && attempt != Guid.Empty
+                ? attempt : Guid.NewGuid()
         };
+
+        HttpContext.Response.Cookies.Append(AttemptCookie, Info.RequestId.ToString(), new CookieOptions
+        {
+            HttpOnly = true, Secure = HttpContext.Request.IsHttps, SameSite = SameSiteMode.Lax, IsEssential = true
+        });
 
         string? ReadClaim(string type)
             => HttpContext.User.Claims.FirstOrDefault(x => x.Type == type)?.Value;
@@ -100,7 +111,7 @@
 
     private async Task HandleSubmitAsync()
     {
-        await PerformCustomValidationAsync();
+        extraMessages.Clear();
 
         if (editContext.Validate())
         {
@@ -111,17 +122,16 @@
     private async Task HandleValidSubmitAsync()
     {
         Info.CardTypeId = 1;
-        await Basket.CheckoutAsync(Info);
-        Nav.NavigateTo("user/orders");
-    }
-
-    private async Task PerformCustomValidationAsync()
-    {
-        extraMessages.Clear();
-
-        if ((await Basket.GetBasketItemsAsync()).Count == 0)
+        try
         {
-            extraMessages.Add(new FieldIdentifier(Info, ""), "Your cart is empty");
+            await Basket.CheckoutAsync(Info);
+            HttpContext.Response.Cookies.Delete(AttemptCookie);
+            Nav.NavigateTo("user/orders");
+        }
+        catch (HttpRequestException)
+        {
+            extraMessages.Add(new FieldIdentifier(Info, ""), "Checkout could not be confirmed. Please retry this checkout.");
+            editContext.NotifyValidationStateChanged();
         }
     }
 

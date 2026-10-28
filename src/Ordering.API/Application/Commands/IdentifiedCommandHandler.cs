@@ -1,4 +1,4 @@
-﻿namespace eShop.Ordering.API.Application.Commands;
+namespace eShop.Ordering.API.Application.Commands;
 
 /// <summary>
 /// Provides a base implementation for handling duplicate request and ensuring idempotent updates, in the cases where
@@ -86,6 +86,11 @@ public abstract class IdentifiedCommandHandler<T, R> : IRequestHandler<Identifie
                 // Send the embedded business command to mediator so it runs its related CommandHandler 
                 var result = await _mediator.Send(command, cancellationToken);
 
+                if (result is bool succeeded && !succeeded)
+                {
+                    throw new InvalidOperationException("The identified command did not succeed.");
+                }
+
                 _logger.LogInformation(
                     "Command result: {@Result} - {CommandName} - {IdProperty}: {CommandId} ({@Command})",
                     result,
@@ -98,7 +103,7 @@ public abstract class IdentifiedCommandHandler<T, R> : IRequestHandler<Identifie
             }
             catch
             {
-                return default;
+                throw;
             }
         }
     }

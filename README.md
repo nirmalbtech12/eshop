@@ -154,3 +154,17 @@ The sample catalog data is defined in [catalog.json](https://github.com/dotnet/e
 ## eShop on Azure
 
 For a version of this app configured for deployment on Azure, please view [the eShop on Azure](https://github.com/Azure-Samples/eShopOnAzure) repo.
+
+### Checkout recovery
+
+Start the local application with `dotnet run --project src/eShop.AppHost/eShop.AppHost.csproj` (Docker must be running). In the Aspire dashboard, wait for identity-api, basket-api, catalog-api, ordering-api and webapp to be healthy before sending checkout traffic. Investigate unhealthy resource logs and restore the resource before retrying.
+
+If checkout is interrupted or its response is lost, keep the same browser session and retry checkout; the checkout attempt identifier is retained until the ordering service confirms success. Do not submit a new attempt from another browser while the outcome is unknown. After retrying, check the user's orders page for the order and its status. If the outcome remains unclear, inspect the ordering database and service logs before attempting another checkout. Use the Aspire dashboard connection details for `orderingdb` to connect with a PostgreSQL client, then replace the parameter below with the customer's identity (the `sub` claim):
+
+```sql
+SELECT o."Id", o."OrderDate", o."OrderStatus"
+FROM ordering.orders o JOIN ordering.buyers b ON b."Id" = o."BuyerId"
+WHERE b."IdentityGuid" = '<customer-sub>' ORDER BY o."OrderDate" DESC;
+```
+
+Compare the order date and contents with the interrupted checkout. Do not create a new attempt until the existing outcome is established.

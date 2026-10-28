@@ -1,4 +1,4 @@
-﻿namespace eShop.Ordering.Infrastructure.Idempotency;
+namespace eShop.Ordering.Infrastructure.Idempotency;
 
 public class RequestManager : IRequestManager
 {
@@ -20,6 +20,12 @@ public class RequestManager : IRequestManager
 
     public async Task CreateRequestForCommandAsync<T>(Guid id)
     {
+        // The request marker must commit or roll back with the command outcome.
+        if (!_context.HasActiveTransaction)
+        {
+            throw new InvalidOperationException("An identified command requires an active transaction.");
+        }
+
         var exists = await ExistAsync(id);
 
         var request = exists ?

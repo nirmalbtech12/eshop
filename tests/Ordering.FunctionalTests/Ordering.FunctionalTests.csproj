@@ -10,12 +10,14 @@
   <ItemGroup>
     <PackageReference Include="Asp.Versioning.Http.Client" />
     <PackageReference Include="Aspire.Hosting.PostgreSQL" />
+    <PackageReference Include="Aspire.Hosting.RabbitMQ" />
     <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" />
     <PackageReference Include="Microsoft.AspNetCore.TestHost" />
     <PackageReference Include="xunit.v3.mtp-v2" />
   </ItemGroup>
  
   <ItemGroup>
+    <ProjectReference Include="..\..\src\WebApp\WebApp.csproj" IsAspireProjectResource="false" Aliases="webapp" />
     <ProjectReference Include="..\..\src\Ordering.API\Ordering.API.csproj" IsAspireProjectResource="false" />
     <ProjectReference Include="..\..\src\Identity.API\Identity.API.csproj" />
     <ProjectReference Include="..\..\src\Ordering.Domain\Ordering.Domain.csproj" IsAspireProjectResource="false" />

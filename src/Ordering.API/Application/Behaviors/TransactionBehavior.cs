@@ -1,4 +1,4 @@
-﻿namespace eShop.Ordering.API.Application.Behaviors;
+namespace eShop.Ordering.API.Application.Behaviors;
 
 using Microsoft.Extensions.Logging;
 
@@ -36,17 +36,28 @@ public class TransactionBehavior<TRequest, TResponse> : IPipelineBehavior<TReque
                 Guid transactionId;
 
                 await using var transaction = await _dbContext.BeginTransactionAsync();
-                using (_logger.BeginScope(new List<KeyValuePair<string, object>> { new("TransactionContext", transaction.TransactionId) }))
+                try
                 {
-                    _logger.LogInformation("Begin transaction {TransactionId} for {CommandName} ({@Command})", transaction.TransactionId, typeName, request);
+                    using (_logger.BeginScope(new List<KeyValuePair<string, object>> { new("TransactionContext", transaction.TransactionId) }))
+                    {
+                        _logger.LogInformation("Begin transaction {TransactionId} for {CommandName} ({@Command})", transaction.TransactionId, typeName, request);
 
-                    response = await next();
+                        response = await next();
 
-                    _logger.LogInformation("Commit transaction {TransactionId} for {CommandName}", transaction.TransactionId, typeName);
+                        _logger.LogInformation("Commit transaction {TransactionId} for {CommandName}", transaction.TransactionId, typeName);
 
-                    await _dbContext.CommitTransactionAsync(transaction);
+                        await _dbContext.CommitTransactionAsync(transaction);
 
-                    transactionId = transaction.TransactionId;
+                        transactionId = transaction.TransactionId;
+                    }
+                }
+                catch
+                {
+                    if (_dbContext.HasActiveTransaction)
+                    {
+                        _dbContext.RollbackTransaction();
+                    }
+                    throw;
                 }
 
                 await _orderingIntegrationEventService.PublishEventsThroughEventBusAsync(transactionId);
