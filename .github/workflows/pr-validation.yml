@@ -25,5 +25,9 @@ jobs:
         uses: actions/setup-dotnet@v3
       - name: Build 
         run: dotnet build eShop.Web.slnf
+      - name: Trust local ASP.NET HTTPS dev certificate
+        run: |
+          dotnet dev-certs https --clean
+          dotnet dev-certs https --trust
       - name: Test
         run: dotnet test --solution eShop.Web.slnf --no-build --no-progress --output detailed

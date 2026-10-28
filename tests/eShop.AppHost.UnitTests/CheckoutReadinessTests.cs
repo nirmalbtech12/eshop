@@ -7,6 +7,7 @@ using Microsoft.Extensions.Diagnostics.HealthChecks;
 namespace eShop.AppHost.UnitTests;
 
 [TestClass]
+[DoNotParallelize]
 public class CheckoutReadinessTests
 {
     [TestMethod]
