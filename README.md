@@ -83,6 +83,12 @@ Run the server tests:
 dotnet test --solution eShop.Web.slnf
 ```
 
+### Demo catalog data
+
+In Development, Catalog initializes an empty catalog database from `src/Catalog.API/Setup/catalog.json`. The fixture currently contains 101 items, 13 brands, and eight categories. Lookup IDs follow each brand or category's first appearance in the checked-in fixture, and item IDs come from that fixture. The default seed does not generate AI embeddings, so independent empty local databases receive the same catalog records when seeded from the same fixture. If any catalog table already contains data, initialization leaves it unchanged; rerunning the app does not replace developer edits.
+
+Embedding generation can be enabled with the `CatalogOptions:GenerateSeedEmbeddings` configuration setting when an embedding provider is configured. Generated embeddings depend on that provider and are outside the deterministic default data guarantee. Production and Staging retain database migrations but do not insert demo records. When changing the fixture, use a fresh, explicitly identified disposable local catalog database to see the new seed; never reset a shared or production database.
+
 Run the Playwright browser journeys. Playwright starts the AppHost automatically, so ensure your container runtime is running first.
 
 ```powershell

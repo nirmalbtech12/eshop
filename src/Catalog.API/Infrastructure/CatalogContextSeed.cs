@@ -1,77 +1,59 @@
 using System.Text.Json;
 using eShop.Catalog.API.Services;
-using Pgvector;
 
 namespace eShop.Catalog.API.Infrastructure;
 
 public partial class CatalogContextSeed(
     IWebHostEnvironment env,
     IOptions<CatalogOptions> settings,
-    ICatalogAI catalogAI,
-    ILogger<CatalogContextSeed> logger) : IDbSeeder<CatalogContext>
+    ICatalogAI catalogAI) : IDbSeeder<CatalogContext>
 {
     public async Task SeedAsync(CatalogContext context)
     {
-        var useCustomizationData = settings.Value.UseCustomizationData;
+        if (!env.IsDevelopment()) return;
+
         var contentRootPath = env.ContentRootPath;
-        var picturePath = env.WebRootPath;
 
         // Workaround from https://github.com/npgsql/efcore.pg/issues/292#issuecomment-388608426
+        if (await context.CatalogItems.AnyAsync() || await context.CatalogBrands.AnyAsync() || await context.CatalogTypes.AnyAsync()) return;
+
         context.Database.OpenConnection();
         ((NpgsqlConnection)context.Database.GetDbConnection()).ReloadTypes();
 
-        if (!context.CatalogItems.Any())
+        var sourcePath = Path.Combine(contentRootPath, "Setup", "catalog.json");
+        var sourceJson = await File.ReadAllTextAsync(sourcePath);
+        var sourceItems = JsonSerializer.Deserialize<CatalogSourceEntry[]>(sourceJson) ?? throw new InvalidDataException("Catalog fixture is empty.");
+        if (sourceItems.Length == 0 || sourceItems.Any(x => x.Id <= 0 || string.IsNullOrWhiteSpace(x.Name) || string.IsNullOrWhiteSpace(x.Brand) || string.IsNullOrWhiteSpace(x.Type)) || sourceItems.Select(x => x.Id).Distinct().Count() != sourceItems.Length)
+            throw new InvalidDataException("Catalog fixture contains invalid or duplicate entries.");
+
+        var brands = sourceItems.Select(x => x.Brand!).Distinct(StringComparer.Ordinal).ToArray();
+        var types = sourceItems.Select(x => x.Type!).Distinct(StringComparer.Ordinal).ToArray();
+        var brandIdsByName = brands.Select((name, index) => new CatalogBrand(name) { Id = index + 1 }).ToDictionary(x => x.Brand, x => x.Id, StringComparer.Ordinal);
+        var typeIdsByName = types.Select((name, index) => new CatalogType(name) { Id = index + 1 }).ToDictionary(x => x.Type, x => x.Id, StringComparer.Ordinal);
+        var catalogItems = sourceItems.Select(source => new CatalogItem(source.Name!)
         {
-            var sourcePath = Path.Combine(contentRootPath, "Setup", "catalog.json");
-            var sourceJson = File.ReadAllText(sourcePath);
-            var sourceItems = JsonSerializer.Deserialize<CatalogSourceEntry[]>(sourceJson) ?? Array.Empty<CatalogSourceEntry>();
+            Id = source.Id, Description = source.Description, Price = source.Price,
+            CatalogBrandId = brandIdsByName[source.Brand!], CatalogTypeId = typeIdsByName[source.Type!],
+            AvailableStock = 100, MaxStockThreshold = 200, RestockThreshold = 10,
+            PictureFileName = $"{source.Id}.webp",
+        }).ToArray();
 
-            context.CatalogBrands.RemoveRange(context.CatalogBrands);
-            await context.CatalogBrands.AddRangeAsync(sourceItems.Select(x => x.Brand).Distinct()
-                .Where(brandName => brandName != null)
-                .Select(brandName => new CatalogBrand(brandName!)));
-            logger.LogInformation("Seeded catalog with {NumBrands} brands", context.CatalogBrands.Count());
-
-            context.CatalogTypes.RemoveRange(context.CatalogTypes);
-            await context.CatalogTypes.AddRangeAsync(sourceItems.Select(x => x.Type).Distinct()
-                .Where(typeName => typeName != null)
-                .Select(typeName => new CatalogType(typeName!)));
-            logger.LogInformation("Seeded catalog with {NumTypes} types", context.CatalogTypes.Count());
-
-            await context.SaveChangesAsync();
-
-            var brandIdsByName = await context.CatalogBrands.ToDictionaryAsync(x => x.Brand, x => x.Id);
-            var typeIdsByName = await context.CatalogTypes.ToDictionaryAsync(x => x.Type, x => x.Id);
-
-            var catalogItems = sourceItems
-                .Where(source => source.Name != null && source.Brand != null && source.Type != null)
-                .Select(source => new CatalogItem(source.Name!)
-            {
-                Id = source.Id,
-                Description = source.Description,
-                Price = source.Price,
-                CatalogBrandId = brandIdsByName[source.Brand!],
-                CatalogTypeId = typeIdsByName[source.Type!],
-                AvailableStock = 100,
-                MaxStockThreshold = 200,
-                RestockThreshold = 10,
-                PictureFileName = $"{source.Id}.webp",
-            }).ToArray();
-
-            if (catalogAI.IsEnabled)
-            {
-                logger.LogInformation("Generating {NumItems} embeddings", catalogItems.Length);
-                IReadOnlyList<Vector>? embeddings = await catalogAI.GetEmbeddingsAsync(catalogItems);
-                for (int i = 0; i < catalogItems.Length; i++)
-                {
-                    catalogItems[i].Embedding = embeddings?[i];
-                }
-            }
-
-            await context.CatalogItems.AddRangeAsync(catalogItems);
-            logger.LogInformation("Seeded catalog with {NumItems} items", context.CatalogItems.Count());
-            await context.SaveChangesAsync();
+        if (settings.Value.GenerateSeedEmbeddings && catalogAI.IsEnabled)
+        {
+            var embeddings = await catalogAI.GetEmbeddingsAsync(catalogItems);
+            if (embeddings?.Count != catalogItems.Length) throw new InvalidDataException("Embedding provider returned an unexpected result count.");
+            for (var i = 0; i < catalogItems.Length; i++) catalogItems[i].Embedding = embeddings[i];
         }
+
+        await using var transaction = await context.Database.BeginTransactionAsync();
+        await context.CatalogBrands.AddRangeAsync(brands.Select((name, index) => new CatalogBrand(name) { Id = index + 1 }));
+        await context.CatalogTypes.AddRangeAsync(types.Select((name, index) => new CatalogType(name) { Id = index + 1 }));
+        await context.CatalogItems.AddRangeAsync(catalogItems);
+        await context.SaveChangesAsync();
+        await context.Database.ExecuteSqlRawAsync("""SELECT setval(pg_get_serial_sequence('"Catalog"', 'Id'), COALESCE((SELECT MAX("Id") FROM "Catalog"), 1), true)""");
+        await context.Database.ExecuteSqlRawAsync("""SELECT setval(pg_get_serial_sequence('"CatalogBrand"', 'Id'), COALESCE((SELECT MAX("Id") FROM "CatalogBrand"), 1), true)""");
+        await context.Database.ExecuteSqlRawAsync("""SELECT setval(pg_get_serial_sequence('"CatalogType"', 'Id'), COALESCE((SELECT MAX("Id") FROM "CatalogType"), 1), true)""");
+        await transaction.CommitAsync();
     }
 
     private class CatalogSourceEntry
