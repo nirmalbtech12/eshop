@@ -1,0 +1,14 @@
+<span class="status @Status.ToLower()" role="@(Status == "StockConfirmed" ? "status" : null)">
+    @if (Status == "StockConfirmed")
+    {
+        <span>Payment confirmation pending. Confirmation may be delayed; please do not place another order.</span>
+    }
+    else
+    {
+        @Status
+    }
+</span>
+
+@code {
+    [Parameter, EditorRequired] public string Status { get; set; } = string.Empty;
+}
