@@ -8,7 +8,7 @@
 <PageTitle>Shopping Bag | AdventureWorks</PageTitle>
 <SectionContent SectionName="page-header-title">Shopping bag</SectionContent>
 
-<div class='cart'>
+<div class='cart' data-cart-update-success="@cartUpdateSucceeded.ToString().ToLowerInvariant()">
     @if (basketItems is null)
     {
         <p class="cart-empty">Loading...</p>
@@ -37,7 +37,7 @@
             </div>
             @foreach (var item in basketItems)
             {
-                var quantity = CurrentOrPendingQuantity(item.ProductId, item.Quantity);
+                var quantity = item.Quantity;
                 <div class="cart-item" @key="@item.Id">
                     <div class="catalog-item-info">
                         <img alt="@item.ProductName" src="@ProductImages.GetProductImageUrl(item.ProductId)" />
@@ -58,7 +58,7 @@
                                         aria-label="Decrease quantity of @item.ProductName" disabled="@(quantity <= 1)">
                                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14" /></svg>
                                 </button>
-                                <input class="quantity-value" type="number" min="1" inputmode="numeric"
+                                <input class="quantity-value" type="number" min="1" inputmode="numeric" name="UpdateQuantityInput"
                                        value="@quantity" aria-label="Quantity of @item.ProductName" data-cart-quantity-input />
                                 <button type="submit" class="quantity-step" name="UpdateQuantityValue" value="@(quantity + 1)"
                                         aria-label="Increase quantity of @item.ProductName">
@@ -106,6 +106,11 @@
 
 <form @formname="update-cart" @onsubmit="@UpdateQuantityAsync"></form>
 
+@if (!string.IsNullOrEmpty(validationMessage))
+{
+    <p class="cart-validation" role="alert">@validationMessage</p>
+}
+
 @code {
     private IReadOnlyCollection<BasketItem>? basketItems;
 
@@ -115,6 +120,12 @@
     [SupplyParameterFromForm]
     public int? UpdateQuantityValue { get; set; }
 
+    [SupplyParameterFromForm]
+    public string? UpdateQuantityInput { get; set; }
+
+    private string? validationMessage;
+    private bool cartUpdateSucceeded;
+
     protected override async Task OnInitializedAsync()
     {
         basketItems = await Basket.GetBasketItemsAsync();
@@ -123,18 +134,20 @@
     private decimal? TotalPrice => basketItems?.Sum(i => i.Quantity * i.UnitPrice);
     private decimal? TotalQuantity => basketItems?.Sum(i => i.Quantity);
 
-    // While an update post is in process, we want to show the pending quantity, not the one
-    // that is committed to the cart (otherwise the UI briefly shows the old data)
-    private int CurrentOrPendingQuantity(int productId, int cartQuantity)
-        => UpdateQuantityId.GetValueOrDefault(-1) == productId
-        ? UpdateQuantityValue!.Value
-        : cartQuantity;
-
     private async Task UpdateQuantityAsync()
     {
-        var id = UpdateQuantityId!.Value;
-        var quantity = UpdateQuantityValue!.Value;
-        await Basket.SetQuantityAsync(id, quantity);
+        cartUpdateSucceeded = false;
+        var id = UpdateQuantityId;
+        var quantity = UpdateQuantityValue ?? (int.TryParse(UpdateQuantityInput, out var inputQuantity) ? inputQuantity : (int?)null);
+        if (id is null || quantity is null || quantity < 0)
+        {
+            validationMessage = "Enter a whole number of at least one, or use Remove to remove an item.";
+            return;
+        }
+
+        validationMessage = null;
+        await Basket.SetQuantityAsync(id.Value, quantity.Value);
         basketItems = await Basket.GetBasketItemsAsync();
+        cartUpdateSucceeded = true;
     }
 }

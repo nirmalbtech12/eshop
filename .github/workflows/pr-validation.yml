@@ -25,5 +25,17 @@ jobs:
         uses: actions/setup-dotnet@v3
       - name: Build 
         run: dotnet build eShop.Web.slnf
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+      - name: Install Playwright dependencies
+        run: npm ci
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
       - name: Test
         run: dotnet test --solution eShop.Web.slnf --no-build --no-progress --output detailed
+        env:
+          ESHOP_USE_HTTP_ENDPOINTS: 1
+          USERNAME1: bob
+          PASSWORD: Pass123$
