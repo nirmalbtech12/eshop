@@ -11,6 +11,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\eShop.AppHost\eShop.AppHost.csproj" IsAspireProjectResource="false" />
+    <Compile Include="..\Catalog.AccessibilityTests\CatalogAccessibilityTest.cs" Link="CatalogAccessibilityTest.cs" />
   </ItemGroup>
 
 </Project>

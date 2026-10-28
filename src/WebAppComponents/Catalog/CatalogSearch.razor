@@ -27,11 +27,13 @@
                     </a>
                 }
 
-                <div class="catalog-search-group">
-                    <h3>Brand</h3>
+                <div class="catalog-search-group" role="group" aria-labelledby="catalog-brand-heading">
+                    <h3 id="catalog-brand-heading">Brand</h3>
                     <div class="catalog-search-group-tags">
                         <a href="@BrandUri(null)"
-                           class="catalog-search-tag @(BrandActiveCount == 0 ? "active" : "")">
+                           class="catalog-search-tag @(BrandActiveCount == 0 ? "active" : "")"
+                           aria-label="@BrandAllLabel"
+                           aria-current="@(BrandActiveCount == 0 ? "true" : null)">
                             <span>All</span>
                             <span class="catalog-search-tag-count">@BrandCount(null)</span>
                         </a>
@@ -40,20 +42,24 @@
                             var count = BrandCount(brand.Id);
                             var isActive = IsBrandActive(brand.Id);
                             var isEmpty = count == 0 && !isActive;
-                            <a href="@BrandUri(brand.Id)"
+                            <a href="@(isEmpty ? null : BrandUri(brand.Id))"
                                class="catalog-search-tag @(isActive ? "active" : "") @(isEmpty ? "is-empty" : "")"
-                               aria-disabled="@(isEmpty ? "true" : null)">
+                               aria-disabled="@(isEmpty ? "true" : null)"
+                               tabindex="@(isEmpty ? "-1" : null)"
+                               aria-current="@(isActive ? "true" : null)">
                                 <span>@brand.Brand</span>
                                 <span class="catalog-search-tag-count">@count</span>
                             </a>
                         }
                     </div>
                 </div>
-                <div class="catalog-search-group">
-                    <h3>Type</h3>
+                <div class="catalog-search-group" role="group" aria-labelledby="catalog-type-heading">
+                    <h3 id="catalog-type-heading">Type</h3>
                     <div class="catalog-search-group-tags">
                         <a href="@TypeUri(null)"
-                           class="catalog-search-tag @(TypeActiveCount == 0 ? "active" : "")">
+                           class="catalog-search-tag @(TypeActiveCount == 0 ? "active" : "")"
+                           aria-label="@TypeAllLabel"
+                           aria-current="@(TypeActiveCount == 0 ? "true" : null)">
                             <span>All</span>
                             <span class="catalog-search-tag-count">@TypeCount(null)</span>
                         </a>
@@ -62,9 +68,11 @@
                             var count = TypeCount(itemType.Id);
                             var isActive = IsTypeActive(itemType.Id);
                             var isEmpty = count == 0 && !isActive;
-                            <a href="@TypeUri(itemType.Id)"
+                            <a href="@(isEmpty ? null : TypeUri(itemType.Id))"
                                class="catalog-search-tag @(isActive ? "active" : "") @(isEmpty ? "is-empty" : "")"
-                               aria-disabled="@(isEmpty ? "true" : null)">
+                               aria-disabled="@(isEmpty ? "true" : null)"
+                               tabindex="@(isEmpty ? "-1" : null)"
+                               aria-current="@(isActive ? "true" : null)">
                                 <span>@itemType.Type</span>
                                 <span class="catalog-search-tag-count">@count</span>
                             </a>
@@ -92,6 +100,9 @@
 
     bool HasActiveFilter => Brands.Count > 0 || Types.Count > 0;
     int ActiveFilterCount => Brands.Count + Types.Count;
+
+    string BrandAllLabel => $"All {BrandCount(null)} brands";
+    string TypeAllLabel => $"All {TypeCount(null)} types";
 
     private bool IsBrandActive(int id) => Brands.Contains(id);
     private bool IsTypeActive(int id) => Types.Contains(id);

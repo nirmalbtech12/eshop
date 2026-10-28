@@ -5,9 +5,9 @@
 <div class="catalog-item"
      data-sort-name="@Item.Name"
      data-sort-price="@Item.Price.ToString(CultureInfo.InvariantCulture)">
-    <a class="catalog-product" href="@ItemHelper.Url(Item)" data-enhance-nav="false">
+    <a class="catalog-product" href="@ItemHelper.Url(Item)" data-enhance-nav="false" aria-label="@AccessibleName">
         <span class='catalog-product-image'>
-            <img alt="@Item.Name" src='@ProductImages.GetProductImageUrl(Item)' />
+            <img alt="" src='@ProductImages.GetProductImageUrl(Item)' />
             @if (Item.CatalogBrand is { Brand.Length: > 0 } brand)
             {
                 <span class="catalog-product-brand">@brand.Brand</span>
@@ -26,4 +26,11 @@
 
     [Parameter]
     public bool IsLoggedIn { get; set; }
+
+    private string AccessibleName => string.Join(" ", new[]
+    {
+        Item.CatalogBrand is { Brand.Length: > 0 } brand ? brand.Brand : null,
+        Item.Name,
+        $"${Item.Price.ToPriceDisplay()}"
+    }.Where(value => !string.IsNullOrWhiteSpace(value)));
 }
