@@ -35,6 +35,11 @@ public class BasketService(
 
     public override async Task<CustomerBasketResponse> UpdateBasket(UpdateBasketRequest request, ServerCallContext context)
     {
+        if (request.Items.Any(item => item.Quantity < 0))
+        {
+            throw new RpcException(new Status(StatusCode.InvalidArgument, "Basket item quantities cannot be negative."));
+        }
+
         var userId = context.GetUserIdentity();
         if (string.IsNullOrEmpty(userId))
         {
