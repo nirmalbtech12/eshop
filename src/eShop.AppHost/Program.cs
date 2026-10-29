@@ -24,19 +24,23 @@ var launchProfileName = ShouldUseHttpForEndpoints() ? "http" : "https";
 var identityApi = builder.AddProject<Projects.Identity_API>("identity-api", launchProfileName)
     .WithExternalHttpEndpoints()
     .WithReference(identityDb)
+    .WaitFor(identityDb)
     .WithHttpHealthCheck("/health");
 
 var identityEndpoint = identityApi.GetEndpoint(launchProfileName);
 
 var basketApi = builder.AddProject<Projects.Basket_API>("basket-api")
-    .WithReference(redis)
+    .WithReference(redis).WaitFor(redis)
     .WithReference(rabbitMq).WaitFor(rabbitMq)
-    .WithEnvironment("Identity__Url", identityEndpoint);
+    .WithEnvironment("Identity__Url", identityEndpoint)
+    .WithEnvironment("Kestrel__EndpointDefaults__Protocols", "Http1AndHttp2")
+    .WithHttpHealthCheck("/health");
 redis.WithParentRelationship(basketApi);
 
 var catalogApi = builder.AddProject<Projects.Catalog_API>("catalog-api")
     .WithReference(rabbitMq).WaitFor(rabbitMq)
-    .WithReference(catalogDb);
+    .WithReference(catalogDb).WaitFor(catalogDb)
+    .WithHttpHealthCheck("/health");
 
 var orderingApi = builder.AddProject<Projects.Ordering_API>("ordering-api")
     .WithReference(rabbitMq).WaitFor(rabbitMq)
@@ -71,8 +75,11 @@ var webApp = builder.AddProject<Projects.WebApp>("webapp", launchProfileName)
     .WithExternalHttpEndpoints()
     .WithUrls(c => c.Urls.ForEach(u => u.DisplayText = $"Online Store ({u.Endpoint?.EndpointName})"))
     .WithReference(basketApi)
+    .WaitFor(basketApi)
     .WithReference(catalogApi)
+    .WaitFor(catalogApi)
     .WithReference(orderingApi)
+    .WaitFor(orderingApi)
     .WithReference(rabbitMq).WaitFor(rabbitMq)
     .WaitFor(identityApi)
     .WithEnvironment("IdentityUrl", identityEndpoint);

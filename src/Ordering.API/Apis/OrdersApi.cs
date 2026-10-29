@@ -115,12 +115,11 @@ public static class OrdersApi
         return await services.Mediator.Send(command);
     }
 
-    public static async Task<Results<Ok, BadRequest<string>>> CreateOrderAsync(
+    public static async Task<Results<Ok, BadRequest<string>, ProblemHttpResult>> CreateOrderAsync(
         [FromHeader(Name = "x-requestid")] Guid requestId,
         CreateOrderRequest request,
         [AsParameters] OrderServices services)
     {
-        
         //mask the credit card number
         
         services.Logger.LogInformation(
@@ -163,7 +162,9 @@ public static class OrdersApi
                 services.Logger.LogWarning("CreateOrderCommand failed - RequestId: {RequestId}", requestId);
             }
 
-            return TypedResults.Ok();
+            return result
+                ? TypedResults.Ok()
+                : TypedResults.Problem(detail: "Create order failed to process.", statusCode: 500);
         }
     }
 }

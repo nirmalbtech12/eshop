@@ -6,7 +6,11 @@ using Asp.Versioning.Http;
 using eShop.Ordering.API.Application.Commands;
 using eShop.Ordering.API.Application.Models;
 using eShop.Ordering.API.Application.Queries;
+using eShop.Ordering.API.Application.IntegrationEvents.Events;
+using eShop.Ordering.Infrastructure;
+using eShop.IntegrationEventLogEF;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.EntityFrameworkCore;
 
 namespace eShop.Ordering.FunctionalTests;
 
@@ -146,17 +150,32 @@ public sealed class OrderingApiTests : IClassFixture<OrderingApiFixture>
             Quantity = 1,
             PictureUrl = null
         };
-        var cardExpirationDate = Convert.ToDateTime("2023-12-22T12:34:24.334Z");
-        var OrderRequest = new CreateOrderRequest("1", "TestUser", null, null, null, null, null, "XXXXXXXXXXXX0005", "Test User", cardExpirationDate, "test buyer", 1, null, new List<BasketItem> { item });
+        var cardExpirationDate = DateTime.UtcNow.AddYears(1);
+        var requestId = Guid.NewGuid();
+        var OrderRequest = new CreateOrderRequest("1", "TestUser", "Seattle", "1 Main St", "WA", "USA", "98101", "1234567812340005", "Test User", cardExpirationDate, "123", 1, "test buyer", new List<BasketItem> { item });
         var content = new StringContent(JsonSerializer.Serialize(OrderRequest), UTF8Encoding.UTF8, "application/json")
         {
-            Headers = { { "x-requestid", Guid.NewGuid().ToString() } }
+            Headers = { { "x-requestid", requestId.ToString() } }
         };
         var response = await _httpClient.PostAsync("api/orders", content, TestContext.Current.CancellationToken);
         var s = await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        using var scope = _webApplicationFactory.Services.CreateScope();
+        var context = scope.ServiceProvider.GetRequiredService<OrderingContext>();
+        var eventLog = await context.Set<IntegrationEventLogEntry>()
+            .Where(entry => entry.EventTypeName == typeof(OrderStartedIntegrationEvent).FullName)
+            .ToListAsync(TestContext.Current.CancellationToken);
+        Assert.Contains(eventLog, entry => entry.EventTypeName == typeof(OrderStartedIntegrationEvent).FullName);
+        var orderStartedEvent = eventLog.First(entry => entry.EventTypeName == typeof(OrderStartedIntegrationEvent).FullName);
+        using var eventContent = JsonDocument.Parse(orderStartedEvent.Content);
+        Assert.Equal("1", eventContent.RootElement.GetProperty("UserId").GetString());
+        var deserializedEvent = Assert.IsType<OrderStartedIntegrationEvent>(orderStartedEvent.DeserializeJsonContent(typeof(OrderStartedIntegrationEvent)).IntegrationEvent);
+        Assert.Equal("1", deserializedEvent.UserId);
+        Assert.NotEqual(Guid.Empty, orderStartedEvent.EventId);
+        Assert.NotEqual(Guid.Empty, orderStartedEvent.TransactionId);
     }
 
     [Fact]

@@ -10,10 +10,23 @@ public class IntegrationEventLogService<TContext> : IIntegrationEventLogService,
     public IntegrationEventLogService(TContext context)
     {
         _context = context;
-        _eventTypes = Assembly.Load(Assembly.GetEntryAssembly().FullName)
-            .GetTypes()
-            .Where(t => t.Name.EndsWith(nameof(IntegrationEvent)))
+        _eventTypes = AppDomain.CurrentDomain.GetAssemblies()
+            .Where(assembly => !assembly.IsDynamic)
+            .SelectMany(assembly => GetLoadableTypes(assembly))
+            .Where(type => type is { IsAbstract: false, IsClass: true } && type != typeof(IntegrationEvent) && typeof(IntegrationEvent).IsAssignableFrom(type))
             .ToArray();
+    }
+
+    private static IEnumerable<Type> GetLoadableTypes(Assembly assembly)
+    {
+        try
+        {
+            return assembly.GetTypes();
+        }
+        catch (ReflectionTypeLoadException exception)
+        {
+            return exception.Types.OfType<Type>();
+        }
     }
 
     public async Task<IEnumerable<IntegrationEventLogEntry>> RetrieveEventLogsPendingToPublishAsync(Guid transactionId)
@@ -25,10 +38,24 @@ public class IntegrationEventLogService<TContext> : IIntegrationEventLogService,
         if (result.Count != 0)
         {
             return result.OrderBy(o => o.CreationTime)
-                .Select(e => e.DeserializeJsonContent(_eventTypes.FirstOrDefault(t => t.Name == e.EventTypeShortName)));
+                .Select(e => e.DeserializeJsonContent(ResolveEventType(e)));
         }
 
         return [];
+    }
+
+    private Type ResolveEventType(IntegrationEventLogEntry entry)
+    {
+        var exactMatch = _eventTypes.FirstOrDefault(type => type.FullName == entry.EventTypeName);
+        if (exactMatch is not null)
+        {
+            return exactMatch;
+        }
+
+        var shortNameMatches = _eventTypes.Where(type => type.Name == entry.EventTypeShortName).Take(2).ToArray();
+        return shortNameMatches.Length == 1
+            ? shortNameMatches[0]
+            : throw new InvalidOperationException($"Could not uniquely resolve integration event type '{entry.EventTypeName}'.");
     }
 
     public Task SaveEventAsync(IntegrationEvent @event, IDbContextTransaction transaction)
