@@ -10,4 +10,8 @@
     <UseMicrosoftTestingPlatformRunner>true</UseMicrosoftTestingPlatformRunner>
   </PropertyGroup>
 
+  <ItemGroup Condition="'$(MSBuildProjectName)' == 'Basket.FunctionalTests' or '$(MSBuildProjectName)' == 'Catalog.FunctionalTests' or '$(MSBuildProjectName)' == 'Ordering.FunctionalTests' or '$(MSBuildProjectName)' == 'Webhooks.FunctionalTests'">
+    <PackageReference Include="Microsoft.Testing.Extensions.TrxReport" VersionOverride="2.0.2" />
+  </ItemGroup>
+
 </Project>

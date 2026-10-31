@@ -1,19 +1,42 @@
 ﻿using System.Security.Claims;
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.Authorization;
+using Microsoft.Extensions.DependencyInjection;
 using eShop.WebAppComponents.Catalog;
 using eShop.WebAppComponents.Services;
 
 namespace eShop.WebApp.Services;
 
-public class BasketState(
-    BasketService basketService,
-    CatalogService catalogService,
-    OrderingService orderingService,
-    AuthenticationStateProvider authenticationStateProvider) : IBasketState
+public class BasketState : IBasketState
 {
+    private readonly IBasketService basketService;
+    private readonly CatalogService catalogService;
+    private readonly OrderingService orderingService;
+    private readonly AuthenticationStateProvider authenticationStateProvider;
     private Task<IReadOnlyCollection<BasketItem>>? _cachedBasket;
     private HashSet<BasketStateChangedSubscription> _changeSubscriptions = new();
+
+    [ActivatorUtilitiesConstructor]
+    public BasketState(
+        BasketService basketService,
+        CatalogService catalogService,
+        OrderingService orderingService,
+        AuthenticationStateProvider authenticationStateProvider)
+        : this((IBasketService)basketService, catalogService, orderingService, authenticationStateProvider)
+    {
+    }
+
+    public BasketState(
+        IBasketService basketService,
+        CatalogService catalogService,
+        OrderingService orderingService,
+        AuthenticationStateProvider authenticationStateProvider)
+    {
+        this.basketService = basketService;
+        this.catalogService = catalogService;
+        this.orderingService = orderingService;
+        this.authenticationStateProvider = authenticationStateProvider;
+    }
 
     public Task DeleteBasketAsync()
         => basketService.DeleteBasketAsync();
@@ -57,6 +80,8 @@ public class BasketState(
 
     public async Task SetQuantityAsync(int productId, int quantity)
     {
+        ArgumentOutOfRangeException.ThrowIfNegative(quantity);
+
         var existingItems = (await FetchBasketItemsAsync()).ToList();
         if (existingItems.FirstOrDefault(row => row.ProductId == productId) is { } row)
         {
