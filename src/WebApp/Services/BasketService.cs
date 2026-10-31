@@ -4,7 +4,14 @@ using GrpcBasketClient = eShop.Basket.API.Grpc.Basket.BasketClient;
 
 namespace eShop.WebApp.Services;
 
-public class BasketService(GrpcBasketClient basketClient)
+public interface IBasketService
+{
+    Task<IReadOnlyCollection<BasketQuantity>> GetBasketAsync();
+    Task DeleteBasketAsync();
+    Task UpdateBasketAsync(IReadOnlyCollection<BasketQuantity> basket);
+}
+
+public class BasketService(GrpcBasketClient basketClient) : IBasketService
 {
     public async Task<IReadOnlyCollection<BasketQuantity>> GetBasketAsync()
     {

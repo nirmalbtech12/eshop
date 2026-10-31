@@ -20,9 +20,8 @@ public static class Extensions
         builder.Services.AddHttpForwarderWithServiceDiscovery();
 
         // Application services
-        builder.Services.AddScoped<BasketState>();
+        builder.Services.AddBasketServices();
         builder.Services.AddScoped<LogOutService>();
-        builder.Services.AddSingleton<BasketService>();
         builder.Services.AddSingleton<OrderStatusNotificationService>();
         builder.Services.AddSingleton<IProductImageUrlProvider, ProductImageUrlProvider>();
         builder.AddAIServices();
@@ -38,6 +37,14 @@ public static class Extensions
         builder.Services.AddHttpClient<OrderingService>(o => o.BaseAddress = new("https+http://ordering-api"))
             .AddApiVersion(1.0)
             .AddAuthToken();
+    }
+
+    public static IServiceCollection AddBasketServices(this IServiceCollection services)
+    {
+        services.AddScoped<BasketState>();
+        services.AddSingleton<BasketService>();
+        services.AddSingleton<IBasketService>(provider => provider.GetRequiredService<BasketService>());
+        return services;
     }
 
     public static void AddEventBusSubscriptions(this IEventBusBuilder eventBus)

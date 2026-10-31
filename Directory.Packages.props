@@ -38,6 +38,7 @@
     <PackageVersion Include="Microsoft.AspNetCore.Mvc.Testing" Version="$(DotnetPackagesVersion)" />
     <PackageVersion Include="Microsoft.AspNetCore.OpenApi" Version="$(DotnetPackagesVersion)" />
     <PackageVersion Include="Microsoft.AspNetCore.TestHost" Version="$(DotnetPackagesVersion)" />
+    <PackageVersion Include="Microsoft.Testing.Extensions.TrxReport" Version="2.0.2" />
     <PackageVersion Include="Microsoft.Extensions.ApiDescription.Server" Version="$(DotnetPackagesVersion)" />
     <PackageVersion Include="Microsoft.Extensions.Identity.Stores" Version="$(DotnetPackagesVersion)" />
     <PackageVersion Include="Microsoft.OpenApi" Version="2.12.0" />

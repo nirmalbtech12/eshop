@@ -7,7 +7,7 @@ using eShop.WebAppComponents.Services;
 namespace eShop.WebApp.Services;
 
 public class BasketState(
-    BasketService basketService,
+    IBasketService basketService,
     CatalogService catalogService,
     OrderingService orderingService,
     AuthenticationStateProvider authenticationStateProvider) : IBasketState
@@ -57,16 +57,18 @@ public class BasketState(
 
     public async Task SetQuantityAsync(int productId, int quantity)
     {
+        ArgumentOutOfRangeException.ThrowIfNegative(quantity);
+
         var existingItems = (await FetchBasketItemsAsync()).ToList();
         if (existingItems.FirstOrDefault(row => row.ProductId == productId) is { } row)
         {
-            if (quantity > 0)
+            if (quantity == 0)
             {
-                row.Quantity = quantity;
+                existingItems.Remove(row);
             }
             else
             {
-                existingItems.Remove(row);
+                row.Quantity = quantity;
             }
 
             _cachedBasket = null;

@@ -19,6 +19,8 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\..\src\WebApp\WebApp.csproj" Aliases="webapp" />
+    <ProjectReference Include="..\..\src\WebAppComponents\WebAppComponents.csproj" />
     <ProjectReference Include="..\..\src\Basket.API\Basket.API.csproj" />
   </ItemGroup>
 
