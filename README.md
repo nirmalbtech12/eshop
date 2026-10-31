@@ -58,6 +58,8 @@ The root [`aspire.config.json`](aspire.config.json) selects `src/eShop.AppHost/e
 Dashboard: https://localhost:<port>/login?t=<token>
 ```
 
+During checkout, the WebApp waits for Basket, Catalog, and Ordering health checks before accepting traffic. If a service restarts while checkout is in progress, check the Aspire dashboard and the signed-in user's order history before retrying checkout. Confirm whether the order exists first; retrying can submit a second order. Ordering API stores orders in PostgreSQL, which remains separate from the API process.
+
 Press <kbd>Ctrl</kbd>+<kbd>C</kbd> to stop the AppHost. See the [`aspire run` command](https://aspire.dev/reference/cli/commands/aspire-run/) for additional options.
 
 To run the AppHost in the background instead:

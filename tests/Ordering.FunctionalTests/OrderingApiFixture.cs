@@ -2,7 +2,12 @@
 using Aspire.Hosting.ApplicationModel;
 
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.TestHost;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
+using eShop.EventBus.Events;
 
 namespace eShop.Ordering.FunctionalTests;
 
@@ -15,6 +20,10 @@ public sealed class OrderingApiFixture : WebApplicationFactory<Program>, IAsyncL
     public IResourceBuilder<ProjectResource> IdentityApi { get; private set; }
 
     private string _postgresConnectionString;
+
+    public WebApplicationFactory<Program> CreateApiHost() => new RestartableOrderingApiFactory(
+        _postgresConnectionString,
+        IdentityApi.GetEndpoint("http").Url);
 
     public OrderingApiFixture()
     {
@@ -73,5 +82,29 @@ public sealed class OrderingApiFixture : WebApplicationFactory<Program>, IAsyncL
                 next(builder);
             };
         }
+    }
+
+    private sealed class RestartableOrderingApiFactory(string connectionString, string identityUrl) : WebApplicationFactory<Program>
+    {
+        protected override void ConfigureWebHost(IWebHostBuilder builder)
+        {
+            builder.ConfigureAppConfiguration((_, config) => config.AddInMemoryCollection(new Dictionary<string, string>
+            {
+                [$"ConnectionStrings:{"OrderingDB"}"] = connectionString,
+                ["Identity:Url"] = identityUrl
+            }));
+            builder.ConfigureTestServices(services =>
+            {
+                services.AddSingleton<IStartupFilter>(new AutoAuthorizeStartupFilter());
+                services.RemoveAll<eShop.Ordering.API.Application.IntegrationEvents.IOrderingIntegrationEventService>();
+                services.AddSingleton<eShop.Ordering.API.Application.IntegrationEvents.IOrderingIntegrationEventService, NoOpOrderingIntegrationEventService>();
+            });
+        }
+    }
+
+    private sealed class NoOpOrderingIntegrationEventService : eShop.Ordering.API.Application.IntegrationEvents.IOrderingIntegrationEventService
+    {
+        public Task PublishEventsThroughEventBusAsync(Guid transactionId) => Task.CompletedTask;
+        public Task AddAndSaveEventAsync(IntegrationEvent evt) => Task.CompletedTask;
     }
 }
