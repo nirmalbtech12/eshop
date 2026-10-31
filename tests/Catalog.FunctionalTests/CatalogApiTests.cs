@@ -1,10 +1,15 @@
-﻿using System.Net.Http.Json;
+﻿using System.IO;
+using System.Net.Http.Json;
 using System.Net;
 using System.Text.Json;
 using Asp.Versioning;
 using Asp.Versioning.Http;
 using eShop.Catalog.API.Model;
+using eShop.Catalog.API.Infrastructure;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.AspNetCore.Hosting;
 
 namespace eShop.Catalog.FunctionalTests;
 
@@ -466,4 +471,88 @@ public sealed class CatalogApiTests : IClassFixture<CatalogApiFixture>
         Assert.Empty(result!.Data);
         Assert.Equal(1000, result.PageIndex);
     }
+}
+
+public sealed class CatalogSeedTests : IClassFixture<CatalogApiFixture>
+{
+    private readonly WebApplicationFactory<Program> _webApplicationFactory;
+
+    public CatalogSeedTests(CatalogApiFixture fixture)
+    {
+        _webApplicationFactory = fixture;
+    }
+
+    [Fact]
+    public async Task SeedIsDeterministicIdempotentCategoryCompleteAndProductionSafe()
+    {
+        using var scope = _webApplicationFactory.Services.CreateScope();
+        var context = scope.ServiceProvider.GetRequiredService<CatalogContext>();
+        var seeder = scope.ServiceProvider.GetRequiredService<IDbSeeder<CatalogContext>>();
+        await ClearCatalogAsync(context);
+        await seeder.SeedAsync(context);
+        var firstSeed = await CaptureCatalogAsync(context);
+        await seeder.SeedAsync(context);
+        AssertCatalogEqual(firstSeed, await CaptureCatalogAsync(context));
+
+        await ClearCatalogAsync(context);
+        await seeder.SeedAsync(context);
+        var secondFreshSeed = await CaptureCatalogAsync(context);
+        AssertCatalogEqual(firstSeed, secondFreshSeed);
+
+        var environment = scope.ServiceProvider.GetRequiredService<IWebHostEnvironment>();
+        using var sourceDocument = JsonDocument.Parse(File.ReadAllText(Path.Combine(environment.ContentRootPath, "Setup", "catalog.json")));
+        var sourceTypes = sourceDocument.RootElement.EnumerateArray()
+            .Select(x => x.GetProperty("Type").GetString()).Where(x => x != null).Distinct();
+        Assert.All(sourceTypes, sourceType => Assert.Contains(firstSeed.Types, x => x.Type == sourceType));
+
+        using var productionFactory = _webApplicationFactory.WithWebHostBuilder(builder => builder.UseEnvironment(Environments.Production));
+        using var productionScope = productionFactory.Services.CreateScope();
+        var productionContext = productionScope.ServiceProvider.GetRequiredService<CatalogContext>();
+        var productionSeeder = productionScope.ServiceProvider.GetRequiredService<IDbSeeder<CatalogContext>>();
+        await productionSeeder.SeedAsync(productionContext);
+        AssertCatalogEqual(secondFreshSeed, await CaptureCatalogAsync(productionContext));
+    }
+
+    private static async Task ClearCatalogAsync(CatalogContext context)
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        await context.CatalogItems.ExecuteDeleteAsync(cancellationToken);
+        await context.CatalogBrands.ExecuteDeleteAsync(cancellationToken);
+        await context.CatalogTypes.ExecuteDeleteAsync(cancellationToken);
+        context.ChangeTracker.Clear();
+    }
+
+    private static async Task<CatalogSnapshot> CaptureCatalogAsync(CatalogContext context)
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var items = await context.CatalogItems.AsNoTracking().OrderBy(x => x.Id)
+            .Select(x => new CatalogItemSnapshot(x.Id, x.Name, x.Description, x.Price, x.PictureFileName,
+                x.CatalogBrandId, x.CatalogTypeId, x.AvailableStock, x.RestockThreshold, x.MaxStockThreshold, x.OnReorder))
+            .ToListAsync(cancellationToken);
+        var brands = await context.CatalogBrands.AsNoTracking().OrderBy(x => x.Id)
+            .Select(x => new CatalogBrandSnapshot(x.Id, x.Brand)).ToListAsync(cancellationToken);
+        var types = await context.CatalogTypes.AsNoTracking().OrderBy(x => x.Id)
+            .Select(x => new CatalogTypeSnapshot(x.Id, x.Type)).ToListAsync(cancellationToken);
+        return new CatalogSnapshot(items, brands, types);
+    }
+
+    private static void AssertCatalogEqual(CatalogSnapshot expected, CatalogSnapshot actual)
+    {
+        Assert.Equal(expected.Items, actual.Items);
+        Assert.Equal(expected.Brands, actual.Brands);
+        Assert.Equal(expected.Types, actual.Types);
+    }
+
+    private sealed record CatalogSnapshot(
+        IReadOnlyList<CatalogItemSnapshot> Items,
+        IReadOnlyList<CatalogBrandSnapshot> Brands,
+        IReadOnlyList<CatalogTypeSnapshot> Types);
+
+    private sealed record CatalogItemSnapshot(
+        int Id, string Name, string Description, decimal Price, string PictureFileName,
+        int CatalogBrandId, int CatalogTypeId, int AvailableStock, int RestockThreshold,
+        int MaxStockThreshold, bool OnReorder);
+
+    private sealed record CatalogBrandSnapshot(int Id, string Brand);
+    private sealed record CatalogTypeSnapshot(int Id, string Type);
 }
