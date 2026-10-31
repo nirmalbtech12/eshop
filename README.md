@@ -83,6 +83,8 @@ Run the server tests:
 dotnet test --solution eShop.Web.slnf
 ```
 
+The basket API contract is defined in [`src/Basket.API/Proto/basket.proto`](src/Basket.API/Proto/basket.proto) and its descriptor regression tests are in [`BasketApiContractTests`](tests/Basket.UnitTests/BasketApiContractTests.cs).
+
 Run the Playwright browser journeys. Playwright starts the AppHost automatically, so ensure your container runtime is running first.
 
 ```powershell
