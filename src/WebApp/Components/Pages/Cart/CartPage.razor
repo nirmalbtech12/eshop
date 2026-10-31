@@ -120,8 +120,8 @@
         basketItems = await Basket.GetBasketItemsAsync();
     }
 
-    private decimal? TotalPrice => basketItems?.Sum(i => i.Quantity * i.UnitPrice);
-    private decimal? TotalQuantity => basketItems?.Sum(i => i.Quantity);
+    private decimal? TotalPrice => basketItems is null ? null : BasketTotals.Price(basketItems);
+    private decimal? TotalQuantity => basketItems is null ? null : BasketTotals.Quantity(basketItems);
 
     // While an update post is in process, we want to show the pending quantity, not the one
     // that is committed to the cart (otherwise the UI briefly shows the old data)
