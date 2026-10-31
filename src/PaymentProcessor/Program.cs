@@ -7,6 +7,7 @@ builder.AddRabbitMqEventBus("EventBus")
 
 builder.Services.AddOptions<PaymentOptions>()
     .BindConfiguration(nameof(PaymentOptions));
+builder.Services.AddSingleton<IPaymentGateway, ConfiguredPaymentGateway>();
 
 var app = builder.Build();
 

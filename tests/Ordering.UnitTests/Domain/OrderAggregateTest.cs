@@ -175,4 +175,16 @@ public class OrderAggregateTest
         //Assert
         Assert.HasCount(expectedResult, fakeOrder.DomainEvents);
     }
+
+    [TestMethod]
+    public void SetStockConfirmedStatus_DescribesPaymentProgress()
+    {
+        var order = new OrderBuilder(new AddressBuilder().Build()).Build();
+        order.SetAwaitingValidationStatus();
+
+        order.SetStockConfirmedStatus();
+
+        Assert.AreEqual(OrderStatus.StockConfirmed, order.OrderStatus);
+        StringAssert.Contains(order.Description, "Payment is being processed");
+    }
 }

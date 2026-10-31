@@ -22,7 +22,7 @@ public class OrderQueries(OrderingContext context)
             State = order.Address.State,
             Street = order.Address.Street,
             Zipcode = order.Address.ZipCode,
-            Status = order.OrderStatus.ToString(),
+            Status = GetCustomerVisibleStatus(order.OrderStatus),
             Total = order.GetTotal(),
             OrderItems = order.OrderItems.Select(oi => new Orderitem
             {
@@ -42,7 +42,7 @@ public class OrderQueries(OrderingContext context)
             {
                 OrderNumber = o.Id,
                 Date = o.OrderDate,
-                Status = o.OrderStatus.ToString(),
+                Status = GetCustomerVisibleStatus(o.OrderStatus),
                 Total =(double) o.OrderItems.Sum(oi => oi.UnitPrice* oi.Units)
             })
             .ToListAsync();
@@ -50,4 +50,9 @@ public class OrderQueries(OrderingContext context)
     
     public async Task<IEnumerable<CardType>> GetCardTypesAsync() => 
         await context.CardTypes.Select(c=> new CardType { Id = c.Id, Name = c.Name }).ToListAsync();
+
+    public static string GetCustomerVisibleStatus(OrderStatus status) =>
+        status == OrderStatus.StockConfirmed
+            ? $"{status} - Payment is being processed"
+            : status.ToString();
 }
