@@ -32,23 +32,7 @@ public class BasketState(
 
     public async Task AddAsync(CatalogItem item)
     {
-        var items = (await FetchBasketItemsAsync()).Select(i => new BasketQuantity(i.ProductId, i.Quantity)).ToList();
-        bool found = false;
-        for (var i = 0; i < items.Count; i++)
-        {
-            var existing = items[i];
-            if (existing.ProductId == item.Id)
-            {
-                items[i] = existing with { Quantity = existing.Quantity + 1 };
-                found = true;
-                break;
-            }
-        }
-
-        if (!found)
-        {
-            items.Add(new BasketQuantity(item.Id, 1));
-        }
+        var items = AddProduct((await FetchBasketItemsAsync()).Select(i => new BasketQuantity(i.ProductId, i.Quantity)), item.Id);
 
         _cachedBasket = null;
         await basketService.UpdateBasketAsync(items);
@@ -57,22 +41,57 @@ public class BasketState(
 
     public async Task SetQuantityAsync(int productId, int quantity)
     {
-        var existingItems = (await FetchBasketItemsAsync()).ToList();
-        if (existingItems.FirstOrDefault(row => row.ProductId == productId) is { } row)
-        {
-            if (quantity > 0)
-            {
-                row.Quantity = quantity;
-            }
-            else
-            {
-                existingItems.Remove(row);
-            }
+        ArgumentOutOfRangeException.ThrowIfNegative(quantity);
 
+        var existingItems = SetProductQuantity(
+            (await FetchBasketItemsAsync()).Select(i => new BasketQuantity(i.ProductId, i.Quantity)),
+            productId,
+            quantity);
+        if (existingItems is not null)
+        {
             _cachedBasket = null;
-            await basketService.UpdateBasketAsync(existingItems.Select(i => new BasketQuantity(i.ProductId, i.Quantity)).ToList());
+            await basketService.UpdateBasketAsync(existingItems);
             await NotifyChangeSubscribersAsync();
         }
+    }
+
+    public static List<BasketQuantity> AddProduct(IEnumerable<BasketQuantity> items, int productId)
+    {
+        var updatedItems = items.ToList();
+        var index = updatedItems.FindIndex(item => item.ProductId == productId);
+        if (index >= 0)
+        {
+            updatedItems[index] = updatedItems[index] with { Quantity = updatedItems[index].Quantity + 1 };
+        }
+        else
+        {
+            updatedItems.Add(new BasketQuantity(productId, 1));
+        }
+
+        return updatedItems;
+    }
+
+    public static List<BasketQuantity>? SetProductQuantity(IEnumerable<BasketQuantity> items, int productId, int quantity)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegative(quantity);
+
+        var updatedItems = items.ToList();
+        var index = updatedItems.FindIndex(item => item.ProductId == productId);
+        if (index < 0)
+        {
+            return null;
+        }
+
+        if (quantity == 0)
+        {
+            updatedItems.RemoveAt(index);
+        }
+        else
+        {
+            updatedItems[index] = updatedItems[index] with { Quantity = quantity };
+        }
+
+        return updatedItems;
     }
 
     public async Task CheckoutAsync(BasketCheckoutInfo checkoutInfo)
@@ -170,3 +189,10 @@ public record CreateOrderRequest(
     int CardTypeId,
     string Buyer,
     List<BasketItem> Items);
+
+public static class BasketTotals
+{
+    public static decimal Price(IEnumerable<BasketItem> items) => items.Sum(item => item.Quantity * item.UnitPrice);
+
+    public static int Quantity(IEnumerable<BasketItem> items) => items.Sum(item => item.Quantity);
+}

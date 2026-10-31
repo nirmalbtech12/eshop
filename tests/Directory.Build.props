@@ -1,5 +1,11 @@
 <Project>
 
+  <ItemGroup>
+    <PackageVersion Include="Microsoft.Testing.Extensions.TrxReport" Version="2.0.2" />
+    <PackageReference Include="Microsoft.Testing.Extensions.TrxReport"
+                      Condition="'$(MSBuildProjectName)' == 'Basket.FunctionalTests' or '$(MSBuildProjectName)' == 'Catalog.FunctionalTests' or '$(MSBuildProjectName)' == 'Ordering.FunctionalTests' or '$(MSBuildProjectName)' == 'Webhooks.FunctionalTests'" />
+  </ItemGroup>
+
   <!-- MSTest settings -->
   <PropertyGroup>
     <MSTestAnalysisMode>Recommended</MSTestAnalysisMode>
