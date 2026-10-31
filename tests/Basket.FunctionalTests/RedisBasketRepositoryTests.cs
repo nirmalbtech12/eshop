@@ -26,13 +26,20 @@ public sealed class RedisBasketRepositoryTests(RedisFixture fixture) : IClassFix
 
         var updated = await repository.UpdateBasketAsync(basket);
         var loaded = await repository.GetBasketAsync(buyerId);
-        var deleted = await repository.DeleteBasketAsync(buyerId);
-        var afterDelete = await repository.GetBasketAsync(buyerId);
-
         Assert.NotNull(updated);
         Assert.NotNull(loaded);
         Assert.Equal(42, loaded.Items.Single().ProductId);
         Assert.Equal(3, loaded.Items.Single().Quantity);
+
+        basket.Items.Single().Quantity = 7;
+        var updatedQuantity = await repository.UpdateBasketAsync(basket);
+        var reloaded = await repository.GetBasketAsync(buyerId);
+
+        Assert.NotNull(updatedQuantity);
+        Assert.NotNull(reloaded);
+        Assert.Equal(7, reloaded.Items.Single().Quantity);
+        var deleted = await repository.DeleteBasketAsync(buyerId);
+        var afterDelete = await repository.GetBasketAsync(buyerId);
         Assert.True(deleted);
         Assert.Null(afterDelete);
     }

@@ -21,7 +21,7 @@
         }
 
         var value = parseInt(input.value, 10);
-        if (!isFinite(value) || value < 1) {
+        if (!isFinite(value)) {
             value = 1;
         }
         input.value = String(value);
