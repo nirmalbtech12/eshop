@@ -1,5 +1,11 @@
 <Project>
 
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Testing.Extensions.TrxReport" VersionOverride="2.0.2" Condition="'$(MSBuildProjectName)' == 'Ordering.FunctionalTests' Or '$(MSBuildProjectName)' == 'Basket.FunctionalTests' Or '$(MSBuildProjectName)' == 'Catalog.FunctionalTests' Or '$(MSBuildProjectName)' == 'Webhooks.FunctionalTests'" />
+    <PackageReference Include="Aspire.Hosting.Testing" VersionOverride="13.6.1" Condition="'$(MSBuildProjectName)' == 'eShop.AppHost.UnitTests'" />
+    <PackageReference Include="Microsoft.Extensions.Http.Resilience" VersionOverride="10.10.0" Condition="'$(MSBuildProjectName)' == 'eShop.AppHost.UnitTests'" />
+  </ItemGroup>
+
   <!-- MSTest settings -->
   <PropertyGroup>
     <MSTestAnalysisMode>Recommended</MSTestAnalysisMode>
