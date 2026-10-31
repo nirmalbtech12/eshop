@@ -2,6 +2,7 @@
 
 using Microsoft.AspNetCore.Http.HttpResults;
 using eShop.Ordering.API.Application.Queries;
+using eShop.Ordering.Domain.AggregatesModel.OrderAggregate;
 using Order = eShop.Ordering.API.Application.Queries.Order;
 using NSubstitute.ExceptionExtensions;
 
@@ -100,6 +101,16 @@ public class OrdersWebApiTest
 
         // Assert
         Assert.IsInstanceOfType<Ok<IEnumerable<OrderSummary>>>(result);
+    }
+
+    [TestMethod]
+    public void CustomerVisibleStatus_DescribesUnresolvedPaymentAndPreservesOtherStatuses()
+    {
+        var paymentStatus = OrderQueries.GetCustomerVisibleStatus(OrderStatus.StockConfirmed);
+        var paidStatus = OrderQueries.GetCustomerVisibleStatus(OrderStatus.Paid);
+
+        Assert.AreEqual("StockConfirmed - Payment is being processed", paymentStatus);
+        Assert.AreEqual("Paid", paidStatus);
     }
 
     [TestMethod]

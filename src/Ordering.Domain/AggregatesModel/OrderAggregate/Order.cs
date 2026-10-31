@@ -112,7 +112,7 @@ public class Order
             AddDomainEvent(new OrderStatusChangedToStockConfirmedDomainEvent(Id));
 
             OrderStatus = OrderStatus.StockConfirmed;
-            Description = "All the items were confirmed with available stock.";
+            Description = "All the items were confirmed with available stock. Payment is being processed.";
         }
     }
 

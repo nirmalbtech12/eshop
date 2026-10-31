@@ -2,7 +2,7 @@
 
 public class OrderStatusChangedToStockConfirmedIntegrationEventHandler(
     IEventBus eventBus,
-    IOptionsMonitor<PaymentOptions> options,
+    IPaymentGateway gateway,
     ILogger<OrderStatusChangedToStockConfirmedIntegrationEventHandler> logger) :
     IIntegrationEventHandler<OrderStatusChangedToStockConfirmedIntegrationEvent>
 {
@@ -10,7 +10,8 @@ public class OrderStatusChangedToStockConfirmedIntegrationEventHandler(
     {
         logger.LogInformation("Handling integration event: {IntegrationEventId} - ({@IntegrationEvent})", @event.Id, @event);
 
-        IntegrationEvent orderPaymentIntegrationEvent;
+        var gatewayElapsed = TimeSpan.Zero;
+        bool paymentSucceeded;
 
         // Business feature comment:
         // When OrderStatusChangedToStockConfirmed Integration Event is handled.
@@ -18,14 +19,41 @@ public class OrderStatusChangedToStockConfirmedIntegrationEventHandler(
         // Instead of a real payment we just take the env. var to simulate the payment 
         // The payment can be successful or it can fail
 
-        if (options.CurrentValue.PaymentSucceeded)
+        const int maxAttempts = 3;
+        var idempotencyKey = $"order-{@event.OrderId}";
+        try
         {
-            orderPaymentIntegrationEvent = new OrderPaymentSucceededIntegrationEvent(@event.OrderId);
+            for (var attempt = 1; ; attempt++)
+            {
+                try
+                {
+                    var attemptStopwatch = System.Diagnostics.Stopwatch.StartNew();
+                    try
+                    {
+                        paymentSucceeded = await gateway.ChargeAsync(@event.OrderId, idempotencyKey);
+                    }
+                    finally
+                    {
+                        gatewayElapsed += attemptStopwatch.Elapsed;
+                    }
+                    break;
+                }
+                catch (TimeoutException) when (attempt < maxAttempts)
+                {
+                    await Task.Delay(TimeSpan.FromMilliseconds(10 * (1 << (attempt - 1))));
+                }
+            }
         }
-        else
+        catch
         {
-            orderPaymentIntegrationEvent = new OrderPaymentFailedIntegrationEvent(@event.OrderId);
+            logger.LogInformation("Payment gateway call for order {OrderId} took {ElapsedMilliseconds} ms", @event.OrderId, gatewayElapsed.TotalMilliseconds);
+            throw;
         }
+
+        logger.LogInformation("Payment gateway call for order {OrderId} took {ElapsedMilliseconds} ms", @event.OrderId, gatewayElapsed.TotalMilliseconds);
+        IntegrationEvent orderPaymentIntegrationEvent = paymentSucceeded
+            ? new OrderPaymentSucceededIntegrationEvent(@event.OrderId)
+            : new OrderPaymentFailedIntegrationEvent(@event.OrderId);
 
         logger.LogInformation("Publishing integration event: {IntegrationEventId} - ({@IntegrationEvent})", orderPaymentIntegrationEvent.Id, orderPaymentIntegrationEvent);
 
