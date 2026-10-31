@@ -1,5 +1,6 @@
 using System.Text.Json;
 using eShop.Catalog.API.Services;
+using eShop.Catalog.API.Model;
 using Pgvector;
 
 namespace eShop.Catalog.API.Infrastructure;
@@ -12,6 +13,12 @@ public partial class CatalogContextSeed(
 {
     public async Task SeedAsync(CatalogContext context)
     {
+        if (env.IsProduction())
+        {
+            logger.LogInformation("Skipping catalog demo seed in production");
+            return;
+        }
+
         var useCustomizationData = settings.Value.UseCustomizationData;
         var contentRootPath = env.ContentRootPath;
         var picturePath = env.WebRootPath;
@@ -26,16 +33,18 @@ public partial class CatalogContextSeed(
             var sourceJson = File.ReadAllText(sourcePath);
             var sourceItems = JsonSerializer.Deserialize<CatalogSourceEntry[]>(sourceJson) ?? Array.Empty<CatalogSourceEntry>();
 
-            context.CatalogBrands.RemoveRange(context.CatalogBrands);
-            await context.CatalogBrands.AddRangeAsync(sourceItems.Select(x => x.Brand).Distinct()
-                .Where(brandName => brandName != null)
-                .Select(brandName => new CatalogBrand(brandName!)));
+            var brands = sourceItems.Select(x => x.Brand).Where(x => x != null).Distinct().ToArray();
+            var existingBrands = await context.CatalogBrands.ToDictionaryAsync(x => x.Brand, x => x.Id);
+            var nextBrandId = existingBrands.Values.DefaultIfEmpty().Max();
+            await context.CatalogBrands.AddRangeAsync(brands.Where(x => !existingBrands.ContainsKey(x!))
+                .Select((brandName, index) => new CatalogBrand(brandName!) { Id = nextBrandId + index + 1 }));
             logger.LogInformation("Seeded catalog with {NumBrands} brands", context.CatalogBrands.Count());
 
-            context.CatalogTypes.RemoveRange(context.CatalogTypes);
-            await context.CatalogTypes.AddRangeAsync(sourceItems.Select(x => x.Type).Distinct()
-                .Where(typeName => typeName != null)
-                .Select(typeName => new CatalogType(typeName!)));
+            var types = sourceItems.Select(x => x.Type).Where(x => x != null).Distinct().ToArray();
+            var existingTypes = await context.CatalogTypes.ToDictionaryAsync(x => x.Type, x => x.Id);
+            var nextTypeId = existingTypes.Values.DefaultIfEmpty().Max();
+            await context.CatalogTypes.AddRangeAsync(types.Where(x => !existingTypes.ContainsKey(x!))
+                .Select((typeName, index) => new CatalogType(typeName!) { Id = nextTypeId + index + 1 }));
             logger.LogInformation("Seeded catalog with {NumTypes} types", context.CatalogTypes.Count());
 
             await context.SaveChangesAsync();
