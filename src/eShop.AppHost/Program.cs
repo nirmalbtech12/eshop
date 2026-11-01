@@ -1,6 +1,10 @@
 ﻿using eShop.AppHost;
 
-var builder = DistributedApplication.CreateBuilder(args);
+var builder = DistributedApplication.CreateBuilder(new DistributedApplicationOptions
+{
+    Args = args,
+    DisableDashboard = ShouldUseHttpForEndpoints()
+});
 
 builder.AddForwardedHeaders();
 builder.AddAzureContainerAppEnvironment("aca");
