@@ -20,13 +20,14 @@
             return;
         }
 
-        var value = parseInt(input.value, 10);
-        if (!isFinite(value) || value < 1) {
-            value = 1;
+        var value = input.value.trim();
+        if (!/^\d+$/.test(value) || Number(value) < 1) {
+            input.setCustomValidity('Enter a quantity greater than zero. Use Remove to remove an item.');
+            input.reportValidity();
+            return;
         }
-        input.value = String(value);
+        input.setCustomValidity('');
 
-        apply.value = String(value);
         if (typeof form.requestSubmit === 'function') {
             form.requestSubmit(apply);
         } else {
@@ -40,6 +41,27 @@
             commit(input);
         }
     });
+
+    document.addEventListener('submit', function (e) {
+        var form = e.target;
+        if (!form.matches('.cart-quantity')) return;
+        var submitter = e.submitter;
+        var target = form.querySelector('[data-cart-quantity-value]');
+        if (submitter && submitter.hasAttribute('data-cart-quantity')) {
+            target.value = submitter.getAttribute('data-cart-quantity');
+        } else {
+            var input = form.querySelector('[data-cart-quantity-input]');
+            if (!input || !/^\d+$/.test(input.value.trim()) || Number(input.value) < 1) {
+                e.preventDefault();
+                if (input) {
+                    input.setCustomValidity('Enter a quantity greater than zero. Use Remove to remove an item.');
+                    input.reportValidity();
+                }
+                return;
+            }
+            target.value = input.value.trim();
+        }
+    }, true);
 
     // Enter should apply the typed value rather than trigger the first submit button
     // (which would be the decrement). Prevent the default submit and blur to commit.

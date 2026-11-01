@@ -2,6 +2,9 @@ import { defineConfig, devices } from '@playwright/test';
 require('dotenv').config({ path: './.env', quiet: true });
 import path from 'path';
 
+process.env.USERNAME1 ||= 'alice';
+process.env.PASSWORD ||= 'Pass123$';
+
 export const STORAGE_STATE = path.join(__dirname, 'playwright/.auth/user.json');
 
 /**
@@ -84,11 +87,18 @@ export default defineConfig({
 
   /* Run your local dev server before starting the tests */
   webServer: {
-    command: 'dotnet run --project src/eShop.AppHost/eShop.AppHost.csproj',
+    command: 'dotnet run --project src/eShop.AppHost/eShop.AppHost.csproj --no-build --no-restore --no-launch-profile',
     url: 'http://localhost:5045',
-    reuseExistingServer: !process.env.CI,
+    reuseExistingServer: false,
     stderr: 'pipe',
     stdout: 'pipe',
-    timeout: process.env.CI ? (5 * 60_000) : 60_000,
+    timeout: 300_000,
+    env: {
+      ...process.env,
+      USERNAME1: process.env.USERNAME1 || 'alice',
+      PASSWORD: process.env.PASSWORD || 'Pass123$',
+      ESHOP_USE_HTTP_ENDPOINTS: '1',
+      ASPNETCORE_ENVIRONMENT: 'Development',
+    },
   },
 });
