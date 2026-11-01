@@ -20,13 +20,10 @@
             return;
         }
 
-        var value = parseInt(input.value, 10);
-        if (!isFinite(value) || value < 1) {
-            value = 1;
+        if (!input.checkValidity() || !Number.isInteger(input.valueAsNumber)) {
+            input.reportValidity();
+            return;
         }
-        input.value = String(value);
-
-        apply.value = String(value);
         if (typeof form.requestSubmit === 'function') {
             form.requestSubmit(apply);
         } else {
