@@ -37,8 +37,8 @@
             </div>
             @foreach (var item in basketItems)
             {
-                var quantity = CurrentOrPendingQuantity(item.ProductId, item.Quantity);
-                <div class="cart-item" @key="@item.Id">
+                var quantity = item.Quantity;
+                <div class="cart-item" data-product-id="@item.ProductId" data-unit-price="@item.UnitPrice" @key="@item.Id">
                     <div class="catalog-item-info">
                         <img alt="@item.ProductName" src="@ProductImages.GetProductImageUrl(item.ProductId)" />
                         <div class="catalog-item-content">
@@ -51,22 +51,22 @@
                             <input type="hidden" name="_handler" value="update-cart" />
                             <AntiforgeryToken />
                             <input type="hidden" name="UpdateQuantityId" value="@item.ProductId" />
-                            <button type="submit" class="cart-quantity-apply" name="UpdateQuantityValue" value="@quantity" data-cart-quantity-apply tabindex="-1" aria-hidden="true">Apply</button>
+                            <button type="submit" class="cart-quantity-apply" data-cart-quantity-apply tabindex="-1" aria-hidden="true">Apply</button>
 
                             <div class="quantity-stepper">
-                                <button type="submit" class="quantity-step" name="UpdateQuantityValue" value="@(quantity - 1)"
+                                <button type="submit" class="quantity-step" name="UpdateQuantityCommand" value="decrease"
                                         aria-label="Decrease quantity of @item.ProductName" disabled="@(quantity <= 1)">
                                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14" /></svg>
                                 </button>
-                                <input class="quantity-value" type="number" min="1" inputmode="numeric"
+                                <input class="quantity-value" type="number" name="UpdateQuantityValue" min="0" step="1" required inputmode="numeric"
                                        value="@quantity" aria-label="Quantity of @item.ProductName" data-cart-quantity-input />
-                                <button type="submit" class="quantity-step" name="UpdateQuantityValue" value="@(quantity + 1)"
+                                <button type="submit" class="quantity-step" name="UpdateQuantityCommand" value="increase"
                                         aria-label="Increase quantity of @item.ProductName">
                                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
                                 </button>
                             </div>
 
-                            <button type="submit" class="cart-remove" name="UpdateQuantityValue" value="0"
+                            <button type="submit" class="cart-remove" name="UpdateQuantityCommand" value="remove"
                                     aria-label="Remove @item.ProductName from your bag">
                                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                                     <path d="M4 7h16M9 7V5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2M6 7l1 13a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-13" />
@@ -105,6 +105,10 @@
 </div>
 
 <form @formname="update-cart" @onsubmit="@UpdateQuantityAsync"></form>
+@if (validationMessage is not null)
+{
+    <p role="alert">@validationMessage</p>
+}
 
 @code {
     private IReadOnlyCollection<BasketItem>? basketItems;
@@ -115,6 +119,9 @@
     [SupplyParameterFromForm]
     public int? UpdateQuantityValue { get; set; }
 
+    [SupplyParameterFromForm]
+    public string? UpdateQuantityCommand { get; set; }
+
     protected override async Task OnInitializedAsync()
     {
         basketItems = await Basket.GetBasketItemsAsync();
@@ -123,18 +130,45 @@
     private decimal? TotalPrice => basketItems?.Sum(i => i.Quantity * i.UnitPrice);
     private decimal? TotalQuantity => basketItems?.Sum(i => i.Quantity);
 
-    // While an update post is in process, we want to show the pending quantity, not the one
-    // that is committed to the cart (otherwise the UI briefly shows the old data)
-    private int CurrentOrPendingQuantity(int productId, int cartQuantity)
-        => UpdateQuantityId.GetValueOrDefault(-1) == productId
-        ? UpdateQuantityValue!.Value
-        : cartQuantity;
+    private string? validationMessage;
 
     private async Task UpdateQuantityAsync()
     {
-        var id = UpdateQuantityId!.Value;
-        var quantity = UpdateQuantityValue!.Value;
+        validationMessage = null;
+        if (UpdateQuantityId is not int id || UpdateQuantityValue is not int postedQuantity || postedQuantity < 0)
+        {
+            validationMessage = "Enter a whole quantity of zero or more.";
+            return;
+        }
+
+        int quantity;
+        try
+        {
+            quantity = UpdateQuantityCommand switch
+            {
+                null or "" => postedQuantity,
+                "increase" => checked(postedQuantity + 1),
+                "decrease" => checked(postedQuantity - 1),
+                "remove" => 0,
+                _ => throw new ArgumentException()
+            };
+        }
+        catch (Exception exception) when (exception is OverflowException or ArgumentException)
+        {
+            validationMessage = "Enter a whole quantity of zero or more.";
+            return;
+        }
+
+        if (quantity < 0)
+        {
+            validationMessage = "Enter a whole quantity of zero or more.";
+            return;
+        }
+
         await Basket.SetQuantityAsync(id, quantity);
+        UpdateQuantityId = null;
+        UpdateQuantityValue = null;
+        UpdateQuantityCommand = null;
         basketItems = await Basket.GetBasketItemsAsync();
     }
 }

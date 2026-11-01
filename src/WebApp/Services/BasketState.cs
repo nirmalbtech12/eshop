@@ -57,20 +57,21 @@ public class BasketState(
 
     public async Task SetQuantityAsync(int productId, int quantity)
     {
+        ArgumentOutOfRangeException.ThrowIfNegative(quantity);
         var existingItems = (await FetchBasketItemsAsync()).ToList();
-        if (existingItems.FirstOrDefault(row => row.ProductId == productId) is { } row)
+        if (existingItems.FirstOrDefault(row => row.ProductId == productId) is not null)
         {
+            var replacement = existingItems
+                .Where(row => row.ProductId != productId)
+                .Select(row => new BasketQuantity(row.ProductId, row.Quantity))
+                .ToList();
             if (quantity > 0)
             {
-                row.Quantity = quantity;
-            }
-            else
-            {
-                existingItems.Remove(row);
+                replacement.Add(new BasketQuantity(productId, quantity));
             }
 
+            await basketService.UpdateBasketAsync(replacement);
             _cachedBasket = null;
-            await basketService.UpdateBasketAsync(existingItems.Select(i => new BasketQuantity(i.ProductId, i.Quantity)).ToList());
             await NotifyChangeSubscribersAsync();
         }
     }
