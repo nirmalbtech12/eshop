@@ -9,6 +9,10 @@
 <SectionContent SectionName="page-header-title">Shopping bag</SectionContent>
 
 <div class='cart'>
+    @if (!string.IsNullOrEmpty(quantityError))
+    {
+        <p class="validation-message" role="alert">@quantityError</p>
+    }
     @if (basketItems is null)
     {
         <p class="cart-empty">Loading...</p>
@@ -37,7 +41,7 @@
             </div>
             @foreach (var item in basketItems)
             {
-                var quantity = CurrentOrPendingQuantity(item.ProductId, item.Quantity);
+                var quantity = DisplayedQuantity(item);
                 <div class="cart-item" @key="@item.Id">
                     <div class="catalog-item-info">
                         <img alt="@item.ProductName" src="@ProductImages.GetProductImageUrl(item.ProductId)" />
@@ -95,7 +99,7 @@
                     <div>$@TotalPrice?.ToPriceDisplay()</div>
                 </div>
                 <a href="checkout" class="button button-primary">Check out</a>
-                <a href="" class="cart-summary-link">
+                <a href="/" class="cart-summary-link">
                     <img role="presentation" src="icons/arrow-left.svg" />
                     <p>Continue shopping</p>
                 </a>
@@ -108,6 +112,9 @@
 
 @code {
     private IReadOnlyCollection<BasketItem>? basketItems;
+    private string? quantityError;
+    private int? pendingQuantityId;
+    private int? pendingQuantity;
 
     [SupplyParameterFromForm]
     public int? UpdateQuantityId { get; set; }
@@ -120,21 +127,32 @@
         basketItems = await Basket.GetBasketItemsAsync();
     }
 
-    private decimal? TotalPrice => basketItems?.Sum(i => i.Quantity * i.UnitPrice);
-    private decimal? TotalQuantity => basketItems?.Sum(i => i.Quantity);
+    private decimal? TotalPrice => basketItems?.Sum(i => DisplayedQuantity(i) * i.UnitPrice);
+    private decimal? TotalQuantity => basketItems?.Sum(DisplayedQuantity);
 
-    // While an update post is in process, we want to show the pending quantity, not the one
-    // that is committed to the cart (otherwise the UI briefly shows the old data)
-    private int CurrentOrPendingQuantity(int productId, int cartQuantity)
-        => UpdateQuantityId.GetValueOrDefault(-1) == productId
-        ? UpdateQuantityValue!.Value
-        : cartQuantity;
+    private int DisplayedQuantity(BasketItem item)
+        => pendingQuantityId == item.ProductId && pendingQuantity is >= 0
+        ? pendingQuantity.Value
+        : item.Quantity;
 
     private async Task UpdateQuantityAsync()
     {
-        var id = UpdateQuantityId!.Value;
-        var quantity = UpdateQuantityValue!.Value;
+        if (UpdateQuantityId is not int id || UpdateQuantityValue is not int quantity)
+        {
+            return;
+        }
+        if (quantity < 0)
+        {
+            quantityError = "Quantity cannot be negative. Your shopping bag was not changed.";
+            return;
+        }
+
+        quantityError = null;
+        pendingQuantityId = id;
+        pendingQuantity = quantity;
         await Basket.SetQuantityAsync(id, quantity);
         basketItems = await Basket.GetBasketItemsAsync();
+        pendingQuantityId = null;
+        pendingQuantity = null;
     }
 }

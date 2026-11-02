@@ -89,6 +89,41 @@ public class BasketServiceTests
     }
 
     [TestMethod]
+    public async Task UpdateBasketOmitsZeroQuantity()
+    {
+        var repository = Substitute.For<IBasketRepository>();
+        repository.UpdateBasketAsync(Arg.Any<CustomerBasket>())
+            .Returns(call => call.Arg<CustomerBasket>());
+        var service = new BasketService(repository, NullLogger<BasketService>.Instance);
+        var request = new UpdateBasketRequest();
+        request.Items.Add(new eShop.Basket.API.Grpc.BasketItem { ProductId = 42, Quantity = 0 });
+        request.Items.Add(new eShop.Basket.API.Grpc.BasketItem { ProductId = 43, Quantity = 2 });
+
+        var response = await service.UpdateBasket(request, CreateContext("buyer-1"));
+
+        Assert.AreEqual(1, response.Items.Count);
+        Assert.AreEqual(43, response.Items[0].ProductId);
+        Assert.AreEqual(2, response.Items[0].Quantity);
+        await repository.Received(1).UpdateBasketAsync(Arg.Is<CustomerBasket>(basket =>
+            basket.Items.Count == 1 && basket.Items[0].ProductId == 43 && basket.Items[0].Quantity == 2));
+    }
+
+    [TestMethod]
+    public async Task UpdateBasketRejectsNegativeQuantityBeforeWrite()
+    {
+        var repository = Substitute.For<IBasketRepository>();
+        var service = new BasketService(repository, NullLogger<BasketService>.Instance);
+        var request = new UpdateBasketRequest();
+        request.Items.Add(new eShop.Basket.API.Grpc.BasketItem { ProductId = 42, Quantity = 3 });
+        request.Items.Add(new eShop.Basket.API.Grpc.BasketItem { ProductId = 43, Quantity = -1 });
+
+        var exception = await Assert.ThrowsAsync<RpcException>(() => service.UpdateBasket(request, CreateContext("buyer-1")));
+
+        Assert.AreEqual(StatusCode.InvalidArgument, exception.StatusCode);
+        await repository.DidNotReceive().UpdateBasketAsync(Arg.Any<CustomerBasket>());
+    }
+
+    [TestMethod]
     public async Task UpdateBasketRejectsAnonymousUser()
     {
         var repository = Substitute.For<IBasketRepository>();
