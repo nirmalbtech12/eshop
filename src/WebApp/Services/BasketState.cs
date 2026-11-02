@@ -57,6 +57,11 @@ public class BasketState(
 
     public async Task SetQuantityAsync(int productId, int quantity)
     {
+        if (quantity < 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(quantity), "Quantity cannot be negative.");
+        }
+
         var existingItems = (await FetchBasketItemsAsync()).ToList();
         if (existingItems.FirstOrDefault(row => row.ProductId == productId) is { } row)
         {

@@ -41,6 +41,11 @@ public class BasketService(
             ThrowNotAuthenticated();
         }
 
+        if (request.Items.Any(item => item.Quantity < 0))
+        {
+            throw new RpcException(new Status(StatusCode.InvalidArgument, "Basket quantities cannot be negative."));
+        }
+
         if (logger.IsEnabled(LogLevel.Debug))
         {
             logger.LogDebug("Begin UpdateBasket call from method {Method} for basket id {Id}", context.Method, userId);
