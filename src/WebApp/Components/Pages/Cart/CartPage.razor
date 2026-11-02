@@ -9,6 +9,10 @@
 <SectionContent SectionName="page-header-title">Shopping bag</SectionContent>
 
 <div class='cart'>
+    @if (!string.IsNullOrEmpty(quantityError))
+    {
+        <p class="validation-message" role="alert">@quantityError</p>
+    }
     @if (basketItems is null)
     {
         <p class="cart-empty">Loading...</p>
@@ -37,7 +41,7 @@
             </div>
             @foreach (var item in basketItems)
             {
-                var quantity = CurrentOrPendingQuantity(item.ProductId, item.Quantity);
+                var quantity = item.Quantity;
                 <div class="cart-item" @key="@item.Id">
                     <div class="catalog-item-info">
                         <img alt="@item.ProductName" src="@ProductImages.GetProductImageUrl(item.ProductId)" />
@@ -48,6 +52,7 @@
                     </div>
                     <div class="catalog-item-quantity">
                         <form method="post" data-enhance class="cart-quantity">
+                            <span class="validation-message" data-cart-quantity-error hidden role="alert">Quantity cannot be negative.</span>
                             <input type="hidden" name="_handler" value="update-cart" />
                             <AntiforgeryToken />
                             <input type="hidden" name="UpdateQuantityId" value="@item.ProductId" />
@@ -108,6 +113,7 @@
 
 @code {
     private IReadOnlyCollection<BasketItem>? basketItems;
+    private string? quantityError;
 
     [SupplyParameterFromForm]
     public int? UpdateQuantityId { get; set; }
@@ -123,17 +129,21 @@
     private decimal? TotalPrice => basketItems?.Sum(i => i.Quantity * i.UnitPrice);
     private decimal? TotalQuantity => basketItems?.Sum(i => i.Quantity);
 
-    // While an update post is in process, we want to show the pending quantity, not the one
-    // that is committed to the cart (otherwise the UI briefly shows the old data)
-    private int CurrentOrPendingQuantity(int productId, int cartQuantity)
-        => UpdateQuantityId.GetValueOrDefault(-1) == productId
-        ? UpdateQuantityValue!.Value
-        : cartQuantity;
-
     private async Task UpdateQuantityAsync()
     {
-        var id = UpdateQuantityId!.Value;
-        var quantity = UpdateQuantityValue!.Value;
+        quantityError = null;
+        if (UpdateQuantityId is not int id || UpdateQuantityValue is not int quantity)
+        {
+            quantityError = "Choose a valid quantity.";
+            return;
+        }
+
+        if (quantity < 0)
+        {
+            quantityError = "Quantity cannot be negative.";
+            return;
+        }
+
         await Basket.SetQuantityAsync(id, quantity);
         basketItems = await Basket.GetBasketItemsAsync();
     }
