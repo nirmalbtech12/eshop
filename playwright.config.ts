@@ -16,6 +16,7 @@ export default defineConfig({
   /* Retry on CI only */
   retries: process.env.CI ? 2 : 0,
   workers: 1,
+  timeout: 10 * 60_000,
   /* Reporter to use. See https://playwright.dev/docs/test-reporters */
   reporter: [['html', { open: 'never' }]],
   /* Shared settings for all the projects below. See https://playwright.dev/docs/api/class-testoptions. */
@@ -84,9 +85,9 @@ export default defineConfig({
 
   /* Run your local dev server before starting the tests */
   webServer: {
-    command: 'dotnet run --project src/eShop.AppHost/eShop.AppHost.csproj',
+    command: 'aspire run --apphost src/eShop.AppHost --no-build --non-interactive',
     url: 'http://localhost:5045',
-    reuseExistingServer: !process.env.CI,
+    reuseExistingServer: false,
     stderr: 'pipe',
     stdout: 'pipe',
     timeout: process.env.CI ? (5 * 60_000) : 60_000,

@@ -85,6 +85,8 @@ dotnet test --solution eShop.Web.slnf
 
 Run the Playwright browser journeys. Playwright starts the AppHost automatically, so ensure your container runtime is running first.
 
+For service restart and uncertain-checkout recovery, see [the local recovery guide](docs/recovery.md).
+
 ```powershell
 npm ci
 npx playwright install chromium

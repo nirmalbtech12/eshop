@@ -115,7 +115,7 @@ public static class OrdersApi
         return await services.Mediator.Send(command);
     }
 
-    public static async Task<Results<Ok, BadRequest<string>>> CreateOrderAsync(
+    public static async Task<IResult> CreateOrderAsync(
         [FromHeader(Name = "x-requestid")] Guid requestId,
         CreateOrderRequest request,
         [AsParameters] OrderServices services)
@@ -132,7 +132,7 @@ public static class OrdersApi
         if (requestId == Guid.Empty)
         {
             services.Logger.LogWarning("Invalid IntegrationEvent - RequestId is missing - {@IntegrationEvent}", request);
-            return TypedResults.BadRequest("RequestId is missing.");
+                return TypedResults.BadRequest("RequestId is missing.");
         }
 
         using (services.Logger.BeginScope(new List<KeyValuePair<string, object>> { new("IdentifiedCommandId", requestId) }))
@@ -163,7 +163,9 @@ public static class OrdersApi
                 services.Logger.LogWarning("CreateOrderCommand failed - RequestId: {RequestId}", requestId);
             }
 
-            return TypedResults.Ok();
+            return result
+                ? TypedResults.Ok()
+                : TypedResults.BadRequest("Order could not be created.");
         }
     }
 }

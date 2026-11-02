@@ -3,6 +3,7 @@
 @using System.ComponentModel.DataAnnotations
 @inject BasketState Basket
 @inject NavigationManager Nav
+@inject ILogger<Checkout> Logger
 @attribute [Authorize]
 
 <PageTitle>Checkout | AdventureWorks</PageTitle>
@@ -10,6 +11,7 @@
 
 <div class='checkout'>
     <EditForm EditContext="@editContext" FormName="checkout" OnSubmit="@HandleSubmitAsync" Enhance>
+        <input type="hidden" name="Info.RequestId" value="@Info.RequestId" />
         <DataAnnotationsValidator />
         <div class="form">
             <div class="form-section">
@@ -58,12 +60,17 @@
             </div>
         </div>
         <ValidationSummary />
+        @if (!string.IsNullOrEmpty(submissionError))
+        {
+            <p role="alert">@submissionError</p>
+        }
     </EditForm>
 </div>
 
 @code {
     private EditContext editContext = default!;
     private ValidationMessageStore extraMessages = default!;
+    private string? submissionError;
 
     [SupplyParameterFromForm]
     public BasketCheckoutInfo Info { get; set; } = default!;
@@ -111,8 +118,17 @@
     private async Task HandleValidSubmitAsync()
     {
         Info.CardTypeId = 1;
-        await Basket.CheckoutAsync(Info);
-        Nav.NavigateTo("user/orders");
+        submissionError = null;
+        try
+        {
+            await Basket.CheckoutAsync(Info);
+            Nav.NavigateTo("user/orders");
+        }
+        catch (Exception exception) when (exception is not NavigationException)
+        {
+            Logger.LogWarning(exception, "Checkout request failed for request {RequestId}.", Info.RequestId);
+            submissionError = "Your order could not be confirmed. Your basket is still available; try again.";
+        }
     }
 
     private async Task PerformCustomValidationAsync()
