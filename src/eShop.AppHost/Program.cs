@@ -74,6 +74,7 @@ var webApp = builder.AddProject<Projects.WebApp>("webapp", launchProfileName)
     .WithReference(catalogApi)
     .WithReference(orderingApi)
     .WithReference(rabbitMq).WaitFor(rabbitMq)
+    .WaitFor(orderingApi)
     .WaitFor(identityApi)
     .WithEnvironment("IdentityUrl", identityEndpoint);
 
