@@ -58,7 +58,7 @@
                                         aria-label="Decrease quantity of @item.ProductName" disabled="@(quantity <= 1)">
                                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14" /></svg>
                                 </button>
-                                <input class="quantity-value" type="number" min="1" inputmode="numeric"
+                                <input class="quantity-value" type="number" min="0" inputmode="numeric"
                                        value="@quantity" aria-label="Quantity of @item.ProductName" data-cart-quantity-input />
                                 <button type="submit" class="quantity-step" name="UpdateQuantityValue" value="@(quantity + 1)"
                                         aria-label="Increase quantity of @item.ProductName">
@@ -94,8 +94,8 @@
                     <div>Total</div>
                     <div>$@TotalPrice?.ToPriceDisplay()</div>
                 </div>
-                <a href="checkout" class="button button-primary">Check out</a>
-                <a href="" class="cart-summary-link">
+                <a href="/checkout" class="button button-primary">Check out</a>
+                <a href="/" class="cart-summary-link">
                     <img role="presentation" src="icons/arrow-left.svg" />
                     <p>Continue shopping</p>
                 </a>
@@ -105,9 +105,14 @@
 </div>
 
 <form @formname="update-cart" @onsubmit="@UpdateQuantityAsync"></form>
+@if (!string.IsNullOrEmpty(quantityError))
+{
+    <p class="validation-message" role="alert" data-cart-quantity-error>@quantityError</p>
+}
 
 @code {
     private IReadOnlyCollection<BasketItem>? basketItems;
+    private string? quantityError;
 
     [SupplyParameterFromForm]
     public int? UpdateQuantityId { get; set; }
@@ -125,15 +130,21 @@
 
     // While an update post is in process, we want to show the pending quantity, not the one
     // that is committed to the cart (otherwise the UI briefly shows the old data)
-    private int CurrentOrPendingQuantity(int productId, int cartQuantity)
-        => UpdateQuantityId.GetValueOrDefault(-1) == productId
-        ? UpdateQuantityValue!.Value
-        : cartQuantity;
+    private int CurrentOrPendingQuantity(int productId, int cartQuantity) => cartQuantity;
 
     private async Task UpdateQuantityAsync()
     {
-        var id = UpdateQuantityId!.Value;
-        var quantity = UpdateQuantityValue!.Value;
+        if (UpdateQuantityId is not int id || UpdateQuantityValue is not int quantity)
+        {
+            quantityError = "The quantity update was incomplete. Please try again.";
+            return;
+        }
+        if (quantity < 0)
+        {
+            quantityError = "Quantity cannot be negative.";
+            return;
+        }
+        quantityError = null;
         await Basket.SetQuantityAsync(id, quantity);
         basketItems = await Basket.GetBasketItemsAsync();
     }
