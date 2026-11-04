@@ -9,6 +9,49 @@
 (function () {
     'use strict';
 
+    var pendingForms = new Set();
+    var deferredNavigation = null;
+
+    function finishPendingSubmissions() {
+        pendingForms.clear();
+        if (deferredNavigation) {
+            var target = deferredNavigation;
+            deferredNavigation = null;
+            window.location.assign(target);
+        }
+    }
+
+    document.addEventListener('submit', function (e) {
+        var form = e.target;
+        if (form.matches && form.matches('form[data-enhance].cart-quantity')) {
+            pendingForms.add(form);
+        }
+    }, true);
+
+    (function hookEnhancedLoad() {
+        if (window.Blazor && typeof window.Blazor.addEventListener === 'function') {
+            window.Blazor.addEventListener('enhancedload', finishPendingSubmissions);
+        } else {
+            setTimeout(hookEnhancedLoad, 150);
+        }
+    })();
+
+    document.addEventListener('click', function (e) {
+        if (pendingForms.size === 0) {
+            return;
+        }
+        var link = e.target.closest && e.target.closest('a[href]');
+        if (!link || link.target || link.hasAttribute('download')) {
+            return;
+        }
+        var target = new URL(link.href, window.location.href);
+        if (target.origin !== window.location.origin) {
+            return;
+        }
+        e.preventDefault();
+        deferredNavigation = target.href;
+    }, true);
+
     function commit(input) {
         var form = input.closest('form');
         if (!form) {
@@ -20,11 +63,22 @@
             return;
         }
 
-        var value = parseInt(input.value, 10);
-        if (!isFinite(value) || value < 1) {
-            value = 1;
+        var error = form.querySelector('[data-cart-quantity-error]');
+        var value = input.value.trim() === '' ? NaN : Number(input.value);
+        if (!Number.isInteger(value) || value < 0) {
+            if (error) {
+                error.textContent = value < 0 ? 'Quantity cannot be negative.' : 'Enter a whole number of zero or more.';
+            }
+            input.setAttribute('aria-invalid', 'true');
+            return;
         }
+        if (error) error.textContent = '';
+        input.removeAttribute('aria-invalid');
         input.value = String(value);
+
+        if (pendingForms.has(form)) {
+            return;
+        }
 
         apply.value = String(value);
         if (typeof form.requestSubmit === 'function') {
