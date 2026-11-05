@@ -151,6 +151,10 @@ For more information on contributing to this repo, read [the contribution docume
 
 The sample catalog data is defined in [catalog.json](https://github.com/dotnet/eShop/blob/main/src/Catalog.API/Setup/catalog.json). Those product names, descriptions, and brand names are fictional and were generated using [GPT-35-Turbo](https://learn.microsoft.com/en-us/azure/ai-services/openai/how-to/chatgpt), and the corresponding [product images](https://github.com/dotnet/eShop/tree/main/src/Catalog.API/Pics) were generated using [DALL·E 3](https://openai.com/dall-e-3).
 
+When the Catalog API starts in Development, it seeds an empty catalog from this checked-in manifest. Brand and category IDs are assigned in ordinal name order, so the same manifest produces the same catalog identities across local databases. The manifest covers Bags, Climbing, Cycling, Footwear, Jackets, Navigation, Ski/boarding, and Trekking. Seed-time embeddings are omitted; runtime AI features remain available.
+
+Seeding is a no-op when catalog items already exist, preserving local edits on restart. Outside Development, the demo seeder does not read the manifest or write catalog data. To load a fresh demo catalog, reset only a disposable local development database; never reset a shared or production database.
+
 ## eShop on Azure
 
 For a version of this app configured for deployment on Azure, please view [the eShop on Azure](https://github.com/Azure-Samples/eShopOnAzure) repo.

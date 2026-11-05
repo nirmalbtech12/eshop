@@ -13,6 +13,7 @@ public sealed class CatalogApiFixture : WebApplicationFactory<Program>, IAsyncLi
 
     public IResourceBuilder<PostgresServerResource> Postgres { get; private set; }
     private string _postgresConnectionString;
+    public string PostgresConnectionString => _postgresConnectionString;
 
     public CatalogApiFixture()
     {

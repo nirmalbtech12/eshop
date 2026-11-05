@@ -1,23 +1,22 @@
 using System.Text.Json;
-using eShop.Catalog.API.Services;
-using Pgvector;
 
 namespace eShop.Catalog.API.Infrastructure;
 
 public partial class CatalogContextSeed(
     IWebHostEnvironment env,
-    IOptions<CatalogOptions> settings,
-    ICatalogAI catalogAI,
     ILogger<CatalogContextSeed> logger) : IDbSeeder<CatalogContext>
 {
     public async Task SeedAsync(CatalogContext context)
     {
-        var useCustomizationData = settings.Value.UseCustomizationData;
+        if (!env.IsDevelopment())
+        {
+            return;
+        }
+
         var contentRootPath = env.ContentRootPath;
-        var picturePath = env.WebRootPath;
 
         // Workaround from https://github.com/npgsql/efcore.pg/issues/292#issuecomment-388608426
-        context.Database.OpenConnection();
+        await context.Database.OpenConnectionAsync();
         ((NpgsqlConnection)context.Database.GetDbConnection()).ReloadTypes();
 
         if (!context.CatalogItems.Any())
@@ -26,16 +25,15 @@ public partial class CatalogContextSeed(
             var sourceJson = File.ReadAllText(sourcePath);
             var sourceItems = JsonSerializer.Deserialize<CatalogSourceEntry[]>(sourceJson) ?? Array.Empty<CatalogSourceEntry>();
 
-            context.CatalogBrands.RemoveRange(context.CatalogBrands);
-            await context.CatalogBrands.AddRangeAsync(sourceItems.Select(x => x.Brand).Distinct()
-                .Where(brandName => brandName != null)
-                .Select(brandName => new CatalogBrand(brandName!)));
+            await using var transaction = await context.Database.BeginTransactionAsync();
+            var brands = sourceItems.Select(x => x.Brand).Where(x => x != null).Select(x => x!)
+                .Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal).ToArray();
+            context.CatalogBrands.AddRange(brands.Select((name, index) => new CatalogBrand(name) { Id = index + 1 }));
             logger.LogInformation("Seeded catalog with {NumBrands} brands", context.CatalogBrands.Count());
 
-            context.CatalogTypes.RemoveRange(context.CatalogTypes);
-            await context.CatalogTypes.AddRangeAsync(sourceItems.Select(x => x.Type).Distinct()
-                .Where(typeName => typeName != null)
-                .Select(typeName => new CatalogType(typeName!)));
+            var types = sourceItems.Select(x => x.Type).Where(x => x != null).Select(x => x!)
+                .Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal).ToArray();
+            context.CatalogTypes.AddRange(types.Select((name, index) => new CatalogType(name) { Id = index + 1 }));
             logger.LogInformation("Seeded catalog with {NumTypes} types", context.CatalogTypes.Count());
 
             await context.SaveChangesAsync();
@@ -58,19 +56,10 @@ public partial class CatalogContextSeed(
                 PictureFileName = $"{source.Id}.webp",
             }).ToArray();
 
-            if (catalogAI.IsEnabled)
-            {
-                logger.LogInformation("Generating {NumItems} embeddings", catalogItems.Length);
-                IReadOnlyList<Vector>? embeddings = await catalogAI.GetEmbeddingsAsync(catalogItems);
-                for (int i = 0; i < catalogItems.Length; i++)
-                {
-                    catalogItems[i].Embedding = embeddings?[i];
-                }
-            }
-
             await context.CatalogItems.AddRangeAsync(catalogItems);
             logger.LogInformation("Seeded catalog with {NumItems} items", context.CatalogItems.Count());
             await context.SaveChangesAsync();
+            await transaction.CommitAsync();
         }
     }
 

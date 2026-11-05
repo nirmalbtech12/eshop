@@ -10,6 +10,7 @@ namespace eShop.Catalog.FunctionalTests;
 
 public sealed class CatalogApiTests : IClassFixture<CatalogApiFixture>
 {
+    private static readonly string[] ExpectedCategories = ["Bags", "Climbing", "Cycling", "Footwear", "Jackets", "Navigation", "Ski/boarding", "Trekking"];
     private readonly WebApplicationFactory<Program> _webApplicationFactory;
     private readonly JsonSerializerOptions _jsonSerializerOptions = new(JsonSerializerDefaults.Web);
 
@@ -22,6 +23,24 @@ public sealed class CatalogApiTests : IClassFixture<CatalogApiFixture>
     {
         var handler = new ApiVersionHandler(new QueryStringApiVersionWriter(), apiVersion);
         return _webApplicationFactory.CreateDefaultClient(handler);
+    }
+
+    [Theory]
+    [InlineData(1.0)]
+    [InlineData(2.0)]
+    public async Task DemoCatalogCoversKeyCategories(double version)
+    {
+        var client = CreateHttpClient(new ApiVersion(version));
+        var types = await client.GetFromJsonAsync<CatalogType[]>("/api/catalog/catalogtypes", TestContext.Current.CancellationToken);
+        var brands = await client.GetFromJsonAsync<CatalogBrand[]>("/api/catalog/catalogbrands", TestContext.Current.CancellationToken);
+        var page = await client.GetFromJsonAsync<PaginatedItems<CatalogItem>>("/api/catalog/items?pageIndex=0&pageSize=200", _jsonSerializerOptions, TestContext.Current.CancellationToken);
+
+        Assert.Equal(ExpectedCategories, types!.Select(x => x.Type).Order(StringComparer.Ordinal));
+        Assert.Equal(13, brands!.Length);
+        Assert.NotEmpty(page!.Data);
+        Assert.All(types, type => Assert.Contains(page.Data, item => item.CatalogTypeId == type.Id));
+        Assert.All(brands, brand => Assert.Contains(page.Data, item => item.CatalogBrandId == brand.Id));
+        Assert.All(page.Data, item => Assert.True(item.Price > 0));
     }
 
     [Theory]
@@ -278,7 +297,7 @@ public sealed class CatalogApiTests : IClassFixture<CatalogApiFixture>
 
         // Assert
         Assert.NotNull(result.Data);
-        Assert.Equal(4, result.Count);
+        Assert.Equal(1, result.Count);
         Assert.Equal(0, result.PageIndex);
         Assert.Equal(5, result.PageSize);
         Assert.Equal(3, result.Data.ToList().FirstOrDefault().CatalogTypeId);
@@ -307,7 +326,7 @@ public sealed class CatalogApiTests : IClassFixture<CatalogApiFixture>
 
         // Assert
         Assert.NotNull(result.Data);
-        Assert.Equal(11, result.Count);
+        Assert.Equal(10, result.Count);
         Assert.Equal(0, result.PageIndex);
         Assert.Equal(5, result.PageSize);
         Assert.Equal(3, result.Data.ToList().FirstOrDefault().CatalogBrandId);
