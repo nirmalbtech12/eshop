@@ -46,6 +46,11 @@ public class BasketService(
             logger.LogDebug("Begin UpdateBasket call from method {Method} for basket id {Id}", context.Method, userId);
         }
 
+        if (request.Items.Any(item => item.Quantity < 0))
+        {
+            throw new RpcException(new Status(StatusCode.InvalidArgument, "Basket quantities cannot be negative."));
+        }
+
         var customerBasket = MapToCustomerBasket(userId, request);
         var response = await repository.UpdateBasketAsync(customerBasket);
         if (response is null)
@@ -99,6 +104,11 @@ public class BasketService(
 
         foreach (var item in customerBasketRequest.Items)
         {
+            if (item.Quantity == 0)
+            {
+                continue;
+            }
+
             response.Items.Add(new()
             {
                 ProductId = item.ProductId,

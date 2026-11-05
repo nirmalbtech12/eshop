@@ -8,6 +8,7 @@ public sealed class RedisFixture : IAsyncLifetime
     private readonly IHost _app;
     private readonly IResourceBuilder<RedisResource> _redis;
     private IConnectionMultiplexer? _connection;
+    private string? _connectionString;
 
     public IConnectionMultiplexer Connection =>
         _connection ?? throw new InvalidOperationException("The Redis fixture has not been initialized.");
@@ -25,12 +26,21 @@ public sealed class RedisFixture : IAsyncLifetime
 
     public async ValueTask InitializeAsync()
     {
-        await _app.StartAsync();
+        using var timeout = new CancellationTokenSource(TimeSpan.FromMinutes(2));
+        await _app.StartAsync(timeout.Token);
         var notifications = _app.Services.GetRequiredService<ResourceNotificationService>();
-        await notifications.WaitForResourceHealthyAsync(_redis.Resource.Name);
+        await notifications.WaitForResourceHealthyAsync(_redis.Resource.Name, timeout.Token);
 
-        var connectionString = await _redis.Resource.ConnectionStringExpression.GetValueAsync(CancellationToken.None);
-        _connection = await ConnectionMultiplexer.ConnectAsync(connectionString!);
+        _connectionString = await _redis.Resource.ConnectionStringExpression.GetValueAsync(timeout.Token);
+        _connection = await ConnectionMultiplexer.ConnectAsync(_connectionString!);
+    }
+
+    public async Task<IConnectionMultiplexer> OpenConnectionAsync()
+    {
+        var options = ConfigurationOptions.Parse(_connectionString!);
+        options.AbortOnConnectFail = true;
+        options.ConnectTimeout = 30_000;
+        return await ConnectionMultiplexer.ConnectAsync(options);
     }
 
     public async ValueTask DisposeAsync()
@@ -41,7 +51,8 @@ public sealed class RedisFixture : IAsyncLifetime
             _connection.Dispose();
         }
 
-        await _app.StopAsync();
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        await _app.StopAsync(timeout.Token);
         if (_app is IAsyncDisposable asyncDisposable)
         {
             await asyncDisposable.DisposeAsync();
