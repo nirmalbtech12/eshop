@@ -9,6 +9,10 @@
 <SectionContent SectionName="page-header-title">Shopping bag</SectionContent>
 
 <div class='cart'>
+    @if (!string.IsNullOrEmpty(quantityError))
+    {
+        <p class="validation-message" role="alert">@quantityError</p>
+    }
     @if (basketItems is null)
     {
         <p class="cart-empty">Loading...</p>
@@ -108,6 +112,7 @@
 
 @code {
     private IReadOnlyCollection<BasketItem>? basketItems;
+    private string? quantityError;
 
     [SupplyParameterFromForm]
     public int? UpdateQuantityId { get; set; }
@@ -125,15 +130,18 @@
 
     // While an update post is in process, we want to show the pending quantity, not the one
     // that is committed to the cart (otherwise the UI briefly shows the old data)
-    private int CurrentOrPendingQuantity(int productId, int cartQuantity)
-        => UpdateQuantityId.GetValueOrDefault(-1) == productId
-        ? UpdateQuantityValue!.Value
-        : cartQuantity;
+    private int CurrentOrPendingQuantity(int productId, int cartQuantity) => cartQuantity;
 
     private async Task UpdateQuantityAsync()
     {
-        var id = UpdateQuantityId!.Value;
-        var quantity = UpdateQuantityValue!.Value;
+        if (UpdateQuantityId is not int id || UpdateQuantityValue is not int quantity || quantity < 0)
+        {
+            quantityError = "Enter a quantity of zero or more. Use Remove to remove an item.";
+            basketItems = await Basket.GetBasketItemsAsync();
+            return;
+        }
+
+        quantityError = null;
         await Basket.SetQuantityAsync(id, quantity);
         basketItems = await Basket.GetBasketItemsAsync();
     }
