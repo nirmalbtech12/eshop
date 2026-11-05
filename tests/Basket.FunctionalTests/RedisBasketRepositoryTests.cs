@@ -20,19 +20,33 @@ public sealed class RedisBasketRepositoryTests(RedisFixture fixture) : IClassFix
                     Quantity = 3,
                     ProductName = "Test product",
                     UnitPrice = 12.50m
+                },
+                new BasketItem
+                {
+                    ProductId = 43,
+                    Quantity = 5,
+                    ProductName = "Second test product",
+                    UnitPrice = 8.25m
                 }
             ]
         };
 
         var updated = await repository.UpdateBasketAsync(basket);
-        var loaded = await repository.GetBasketAsync(buyerId);
-        var deleted = await repository.DeleteBasketAsync(buyerId);
-        var afterDelete = await repository.GetBasketAsync(buyerId);
+        using var freshConnection = await fixture.OpenConnectionAsync();
+        var reopenedRepository = new RedisBasketRepository(
+            NullLogger<RedisBasketRepository>.Instance,
+            freshConnection);
+        var loaded = await reopenedRepository.GetBasketAsync(buyerId);
+        var deleted = await reopenedRepository.DeleteBasketAsync(buyerId);
+        var afterDelete = await reopenedRepository.GetBasketAsync(buyerId);
 
         Assert.NotNull(updated);
         Assert.NotNull(loaded);
-        Assert.Equal(42, loaded.Items.Single().ProductId);
-        Assert.Equal(3, loaded.Items.Single().Quantity);
+        Assert.Equal(buyerId, loaded.BuyerId);
+        Assert.Equal(2, loaded.Items.Count);
+        Assert.Collection(loaded.Items,
+            item => { Assert.Equal(42, item.ProductId); Assert.Equal(3, item.Quantity); },
+            item => { Assert.Equal(43, item.ProductId); Assert.Equal(5, item.Quantity); });
         Assert.True(deleted);
         Assert.Null(afterDelete);
     }

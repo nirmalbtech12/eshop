@@ -9,6 +9,10 @@
 <SectionContent SectionName="page-header-title">Shopping bag</SectionContent>
 
 <div class='cart'>
+    @if (!string.IsNullOrEmpty(validationError))
+    {
+        <p class="validation-error" role="alert">@validationError</p>
+    }
     @if (basketItems is null)
     {
         <p class="cart-empty">Loading...</p>
@@ -58,7 +62,7 @@
                                         aria-label="Decrease quantity of @item.ProductName" disabled="@(quantity <= 1)">
                                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14" /></svg>
                                 </button>
-                                <input class="quantity-value" type="number" min="1" inputmode="numeric"
+                                <input class="quantity-value" type="number" min="0" step="1" required inputmode="numeric"
                                        value="@quantity" aria-label="Quantity of @item.ProductName" data-cart-quantity-input />
                                 <button type="submit" class="quantity-step" name="UpdateQuantityValue" value="@(quantity + 1)"
                                         aria-label="Increase quantity of @item.ProductName">
@@ -108,6 +112,7 @@
 
 @code {
     private IReadOnlyCollection<BasketItem>? basketItems;
+    private string? validationError;
 
     [SupplyParameterFromForm]
     public int? UpdateQuantityId { get; set; }
@@ -132,8 +137,20 @@
 
     private async Task UpdateQuantityAsync()
     {
-        var id = UpdateQuantityId!.Value;
-        var quantity = UpdateQuantityValue!.Value;
+        if (UpdateQuantityId is null || UpdateQuantityValue is null || UpdateQuantityValue < 0)
+        {
+            validationError = "Enter a whole number of zero or more.";
+            UpdateQuantityId = null;
+            UpdateQuantityValue = null;
+            basketItems = await Basket.GetBasketItemsAsync();
+            return;
+        }
+
+        validationError = null;
+        var id = UpdateQuantityId.Value;
+        var quantity = UpdateQuantityValue.Value;
+        UpdateQuantityId = null;
+        UpdateQuantityValue = null;
         await Basket.SetQuantityAsync(id, quantity);
         basketItems = await Basket.GetBasketItemsAsync();
     }
