@@ -25,12 +25,21 @@ public sealed class RedisFixture : IAsyncLifetime
 
     public async ValueTask InitializeAsync()
     {
-        await _app.StartAsync();
-        var notifications = _app.Services.GetRequiredService<ResourceNotificationService>();
-        await notifications.WaitForResourceHealthyAsync(_redis.Resource.Name);
+        using var timeout = new CancellationTokenSource(TimeSpan.FromMinutes(2));
+        try
+        {
+            await _app.StartAsync(timeout.Token);
+            var notifications = _app.Services.GetRequiredService<ResourceNotificationService>();
+            await notifications.WaitForResourceHealthyAsync(_redis.Resource.Name, timeout.Token);
 
-        var connectionString = await _redis.Resource.ConnectionStringExpression.GetValueAsync(CancellationToken.None);
-        _connection = await ConnectionMultiplexer.ConnectAsync(connectionString!);
+            var connectionString = await _redis.Resource.ConnectionStringExpression.GetValueAsync(timeout.Token);
+            _connection = await ConnectionMultiplexer.ConnectAsync(connectionString!).WaitAsync(timeout.Token);
+        }
+        catch
+        {
+            await DisposeHostAsync();
+            throw;
+        }
     }
 
     public async ValueTask DisposeAsync()
@@ -41,10 +50,23 @@ public sealed class RedisFixture : IAsyncLifetime
             _connection.Dispose();
         }
 
-        await _app.StopAsync();
+        await DisposeHostAsync();
+    }
+
+    private async ValueTask DisposeHostAsync()
+    {
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        try
+        {
+            await _app.StopAsync(timeout.Token);
+        }
+        catch (OperationCanceledException)
+        {
+            // The bounded cleanup deadline prevents a failed container from hanging the test process.
+        }
         if (_app is IAsyncDisposable asyncDisposable)
         {
-            await asyncDisposable.DisposeAsync();
+            await asyncDisposable.DisposeAsync().AsTask().WaitAsync(timeout.Token);
         }
         else
         {
