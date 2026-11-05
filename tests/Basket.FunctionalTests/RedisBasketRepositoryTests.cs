@@ -3,6 +3,53 @@ namespace eShop.Basket.FunctionalTests;
 public sealed class RedisBasketRepositoryTests(RedisFixture fixture) : IClassFixture<RedisFixture>
 {
     [Fact]
+    public async Task QuantityReplacementAndRemovalSurviveRepositoryReconnection()
+    {
+        var buyerId = $"replacement-{Guid.NewGuid():N}";
+        var repository = new RedisBasketRepository(NullLogger<RedisBasketRepository>.Instance, fixture.Connection);
+        try
+        {
+            await repository.UpdateBasketAsync(new CustomerBasket
+            {
+                BuyerId = buyerId,
+                Items = [new BasketItem { ProductId = 42, Quantity = 1 }, new BasketItem { ProductId = 43, Quantity = 2 }]
+            });
+            await repository.UpdateBasketAsync(new CustomerBasket
+            {
+                BuyerId = buyerId,
+                Items = [new BasketItem { ProductId = 42, Quantity = 3 }, new BasketItem { ProductId = 43, Quantity = 4 }]
+            });
+
+            var freshConnection = await ConnectionMultiplexer.ConnectAsync(fixture.Connection.Configuration);
+            try
+            {
+                var freshRepository = new RedisBasketRepository(NullLogger<RedisBasketRepository>.Instance, freshConnection);
+                var replaced = await freshRepository.GetBasketAsync(buyerId);
+                Assert.NotNull(replaced);
+                Assert.Equal([(42, 3), (43, 4)], replaced.Items.Select(item => (item.ProductId, item.Quantity)).OrderBy(item => item.ProductId));
+
+                await freshRepository.UpdateBasketAsync(new CustomerBasket
+                {
+                    BuyerId = buyerId,
+                    Items = [new BasketItem { ProductId = 43, Quantity = 4 }]
+                });
+                var removed = await freshRepository.GetBasketAsync(buyerId);
+                Assert.NotNull(removed);
+                Assert.Equal([(43, 4)], removed.Items.Select(item => (item.ProductId, item.Quantity)));
+            }
+            finally
+            {
+                await freshConnection.CloseAsync();
+                freshConnection.Dispose();
+            }
+        }
+        finally
+        {
+            await repository.DeleteBasketAsync(buyerId);
+        }
+    }
+
+    [Fact]
     public async Task UpdateGetAndDeleteRoundTrip()
     {
         var repository = new RedisBasketRepository(

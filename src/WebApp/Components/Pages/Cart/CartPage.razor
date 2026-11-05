@@ -29,6 +29,7 @@
     }
     else
     {
+        <p class="validation-message" role="alert" data-cart-update-error hidden="@string.IsNullOrEmpty(updateError)">@updateError</p>
         <div class='cart-items'>
             <div class='cart-item-header'>
                 <div class='catalog-item-info'>Products</div>
@@ -37,7 +38,7 @@
             </div>
             @foreach (var item in basketItems)
             {
-                var quantity = CurrentOrPendingQuantity(item.ProductId, item.Quantity);
+                var quantity = item.Quantity;
                 <div class="cart-item" @key="@item.Id">
                     <div class="catalog-item-info">
                         <img alt="@item.ProductName" src="@ProductImages.GetProductImageUrl(item.ProductId)" />
@@ -108,6 +109,7 @@
 
 @code {
     private IReadOnlyCollection<BasketItem>? basketItems;
+    private string? updateError;
 
     [SupplyParameterFromForm]
     public int? UpdateQuantityId { get; set; }
@@ -123,18 +125,29 @@
     private decimal? TotalPrice => basketItems?.Sum(i => i.Quantity * i.UnitPrice);
     private decimal? TotalQuantity => basketItems?.Sum(i => i.Quantity);
 
-    // While an update post is in process, we want to show the pending quantity, not the one
-    // that is committed to the cart (otherwise the UI briefly shows the old data)
-    private int CurrentOrPendingQuantity(int productId, int cartQuantity)
-        => UpdateQuantityId.GetValueOrDefault(-1) == productId
-        ? UpdateQuantityValue!.Value
-        : cartQuantity;
-
     private async Task UpdateQuantityAsync()
     {
-        var id = UpdateQuantityId!.Value;
-        var quantity = UpdateQuantityValue!.Value;
-        await Basket.SetQuantityAsync(id, quantity);
-        basketItems = await Basket.GetBasketItemsAsync();
+        if (UpdateQuantityId is not int id || UpdateQuantityValue is not int quantity)
+        {
+            updateError = "Choose a product and a valid quantity.";
+            return;
+        }
+
+        if (quantity < 0)
+        {
+            updateError = "Quantity cannot be negative. Use Remove to remove this item.";
+            return;
+        }
+
+        try
+        {
+            await Basket.SetQuantityAsync(id, quantity);
+            basketItems = await Basket.GetBasketItemsAsync();
+            updateError = null;
+        }
+        catch
+        {
+            updateError = "Your basket could not be updated. Please try again.";
+        }
     }
 }

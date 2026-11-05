@@ -4,19 +4,32 @@ export async function addProductToCart(page: Page, productName: string) {
   await page.goto('/');
   await page.getByRole('link', { name: productName }).click();
   await expect(page.getByRole('heading', { name: productName })).toBeVisible();
-  await page.getByRole('button', { name: 'Add to shopping bag' }).click();
-  await expect(page.locator('.in-cart').getByRole('link', { name: 'shopping bag' })).toBeVisible();
+  const productPath = new URL(page.url()).pathname;
+  const addResponse = page.waitForResponse(response =>
+    response.request().method() === 'POST' && new URL(response.url()).pathname === productPath);
+  await Promise.all([
+    addResponse,
+    page.getByRole('button', { name: 'Add to shopping bag' }).click(),
+  ]);
+  const response = await addResponse;
+  if (!response.ok()) {
+    throw new Error(`Adding ${productName} failed with status ${response.status()}`);
+  }
 }
 
 /** Remove the first cart line via its Remove control, waiting for the update to post. */
 export async function removeFirstCartItem(page: Page) {
-  const updateRequest = page.waitForRequest(request =>
-    request.method() === 'POST' && new URL(request.url()).pathname === '/cart');
+  const updateResponse = page.waitForResponse(response =>
+    response.request().method() === 'POST' && new URL(response.url()).pathname === '/cart');
 
   await Promise.all([
-    updateRequest,
+    updateResponse,
     page.getByRole('button', { name: /^Remove/ }).first().click(),
   ]);
+  const response = await updateResponse;
+  if (!response.ok()) {
+    throw new Error(`Cart removal failed with status ${response.status()}`);
+  }
 }
 
 export async function emptyCart(page: Page) {
