@@ -26,16 +26,14 @@ public partial class CatalogContextSeed(
             var sourceJson = File.ReadAllText(sourcePath);
             var sourceItems = JsonSerializer.Deserialize<CatalogSourceEntry[]>(sourceJson) ?? Array.Empty<CatalogSourceEntry>();
 
+            var brands = sourceItems.Select(x => x.Brand).Where(name => name != null).Distinct(StringComparer.Ordinal).ToArray();
             context.CatalogBrands.RemoveRange(context.CatalogBrands);
-            await context.CatalogBrands.AddRangeAsync(sourceItems.Select(x => x.Brand).Distinct()
-                .Where(brandName => brandName != null)
-                .Select(brandName => new CatalogBrand(brandName!)));
+            await context.CatalogBrands.AddRangeAsync(brands.Select((brand, index) => new CatalogBrand(brand!) { Id = index + 1 }));
             logger.LogInformation("Seeded catalog with {NumBrands} brands", context.CatalogBrands.Count());
 
+            var types = sourceItems.Select(x => x.Type).Where(name => name != null).Distinct(StringComparer.Ordinal).ToArray();
             context.CatalogTypes.RemoveRange(context.CatalogTypes);
-            await context.CatalogTypes.AddRangeAsync(sourceItems.Select(x => x.Type).Distinct()
-                .Where(typeName => typeName != null)
-                .Select(typeName => new CatalogType(typeName!)));
+            await context.CatalogTypes.AddRangeAsync(types.Select((type, index) => new CatalogType(type!) { Id = index + 1 }));
             logger.LogInformation("Seeded catalog with {NumTypes} types", context.CatalogTypes.Count());
 
             await context.SaveChangesAsync();

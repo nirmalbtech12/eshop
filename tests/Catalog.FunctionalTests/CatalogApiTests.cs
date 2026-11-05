@@ -1,21 +1,222 @@
-﻿using System.Net.Http.Json;
+﻿using System.IO;
+using System.Net.Http.Json;
 using System.Net;
 using System.Text.Json;
 using Asp.Versioning;
 using Asp.Versioning.Http;
 using eShop.Catalog.API.Model;
+using eShop.Catalog.API.Infrastructure;
+using eShop.Catalog.API;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
+using Microsoft.Extensions.Configuration;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Npgsql;
+using Pgvector.EntityFrameworkCore;
+
+[assembly: CollectionBehavior(DisableTestParallelization = true)]
 
 namespace eShop.Catalog.FunctionalTests;
 
 public sealed class CatalogApiTests : IClassFixture<CatalogApiFixture>
 {
+    private readonly CatalogApiFixture _fixture;
     private readonly WebApplicationFactory<Program> _webApplicationFactory;
     private readonly JsonSerializerOptions _jsonSerializerOptions = new(JsonSerializerDefaults.Web);
 
     public CatalogApiTests(CatalogApiFixture fixture)
     {
+        _fixture = fixture;
         _webApplicationFactory = fixture;
+    }
+
+    [Fact]
+    public async Task SeedProducesDeterministicDataAndIsIdempotent()
+    {
+        using var client = _webApplicationFactory.CreateClient();
+        using var scope = _webApplicationFactory.Services.CreateScope();
+        var context = scope.ServiceProvider.GetRequiredService<CatalogContext>();
+        var before = await ReadSeedSnapshot(context);
+
+        var scopedServices = scope.ServiceProvider;
+        var seeder = new CatalogContextSeed(
+            _webApplicationFactory.Services.GetRequiredService<IWebHostEnvironment>(),
+            _webApplicationFactory.Services.GetRequiredService<IOptions<CatalogOptions>>(),
+            scopedServices.GetRequiredService<eShop.Catalog.API.Services.ICatalogAI>(),
+            _webApplicationFactory.Services.GetRequiredService<ILogger<CatalogContextSeed>>());
+        await seeder.SeedAsync(context);
+        context.ChangeTracker.Clear();
+        var after = await ReadSeedSnapshot(context);
+
+        Assert.Equal(before.Items, after.Items);
+        Assert.Equal(before.Brands, after.Brands);
+        Assert.Equal(before.Types, after.Types);
+        Assert.NotEmpty(before.Items);
+        Assert.NotEmpty(before.Brands);
+        Assert.NotEmpty(before.Types);
+    }
+
+    [Fact]
+    public async Task SeededDemoCoversSourceCategoriesAndBrands()
+    {
+        using var client = _webApplicationFactory.CreateClient();
+        using var scope = _webApplicationFactory.Services.CreateScope();
+        var context = scope.ServiceProvider.GetRequiredService<CatalogContext>();
+        await context.CatalogItems.ExecuteDeleteAsync(TestContext.Current.CancellationToken);
+        await context.CatalogBrands.ExecuteDeleteAsync(TestContext.Current.CancellationToken);
+        await context.CatalogTypes.ExecuteDeleteAsync(TestContext.Current.CancellationToken);
+        await SeedCatalog(scope.ServiceProvider, context);
+        var items = await context.CatalogItems.Include(x => x.CatalogBrand).Include(x => x.CatalogType).AsNoTracking().ToListAsync(TestContext.Current.CancellationToken);
+        var sourcePath = Path.Combine(_webApplicationFactory.Services.GetRequiredService<IWebHostEnvironment>().ContentRootPath, "Setup", "catalog.json");
+        var source = JsonSerializer.Deserialize<SeedSource[]>(await File.ReadAllTextAsync(sourcePath, TestContext.Current.CancellationToken))!;
+
+        Assert.Equal(source.Length, items.Count);
+        foreach (var entry in source)
+        {
+            var item = Assert.Single(items, x => x.Id == entry.Id);
+            Assert.Equal(entry.Name, item.Name);
+            Assert.Equal(entry.Description, item.Description);
+            Assert.Equal(entry.Price, item.Price);
+            Assert.Equal(entry.Brand, item.CatalogBrand!.Brand);
+            Assert.Equal(entry.Type, item.CatalogType!.Type);
+            Assert.Equal(Array.IndexOf(source.Select(x => x.Brand).Distinct(StringComparer.Ordinal).ToArray(), entry.Brand) + 1, item.CatalogBrand.Id);
+            Assert.Equal(Array.IndexOf(source.Select(x => x.Type).Distinct(StringComparer.Ordinal).ToArray(), entry.Type) + 1, item.CatalogType.Id);
+        }
+        Assert.Equal(source.Select(x => x.Brand).Distinct().Order(StringComparer.Ordinal),
+            items.Select(x => x.CatalogBrand!.Brand).Distinct().Order(StringComparer.Ordinal));
+        Assert.Equal(source.Select(x => x.Type).Distinct().Order(StringComparer.Ordinal),
+            items.Select(x => x.CatalogType!.Type).Distinct().Order(StringComparer.Ordinal));
+
+        var firstCleanRun = await ReadSeedSnapshot(context);
+        await context.CatalogItems.ExecuteDeleteAsync(TestContext.Current.CancellationToken);
+        await context.CatalogBrands.ExecuteDeleteAsync(TestContext.Current.CancellationToken);
+        await context.CatalogTypes.ExecuteDeleteAsync(TestContext.Current.CancellationToken);
+        await SeedCatalog(scope.ServiceProvider, context);
+        var secondCleanRun = await ReadSeedSnapshot(context);
+        Assert.Equal(firstCleanRun.Items, secondCleanRun.Items);
+        Assert.Equal(firstCleanRun.Brands, secondCleanRun.Brands);
+        Assert.Equal(firstCleanRun.Types, secondCleanRun.Types);
+    }
+
+    [Fact]
+    public async Task ProductionStartupLeavesCatalogUntouched()
+    {
+        using var fixtureClient = _webApplicationFactory.CreateClient();
+        var fixtureContext = _webApplicationFactory.Services.CreateScope();
+        var databaseName = $"catalog_production_{Guid.NewGuid():N}";
+        var adminConnection = new NpgsqlConnectionStringBuilder(await _fixture.Postgres.Resource.GetConnectionStringAsync())
+        {
+            Database = "postgres",
+            Pooling = false
+        }.ConnectionString;
+        var productionConnection = new NpgsqlConnectionStringBuilder(adminConnection) { Database = databaseName }.ConnectionString;
+
+        using var admin = new NpgsqlConnection(adminConnection);
+        await admin.OpenAsync(TestContext.Current.CancellationToken);
+        await using (var createDatabase = new NpgsqlCommand($"CREATE DATABASE \"{databaseName}\"", admin))
+        {
+            await createDatabase.ExecuteNonQueryAsync(TestContext.Current.CancellationToken);
+        }
+
+        try
+        {
+            SeedSnapshot before;
+            var options = new DbContextOptionsBuilder<CatalogContext>()
+                .UseNpgsql(productionConnection, postgres => postgres.UseVector())
+                .Options;
+            using (var sentinelContext = new CatalogContext(options, fixtureContext.ServiceProvider.GetRequiredService<IConfiguration>())
+            {
+                CatalogItems = null!,
+                CatalogBrands = null!,
+                CatalogTypes = null!
+            })
+            {
+                await sentinelContext.Database.MigrateAsync(TestContext.Current.CancellationToken);
+                sentinelContext.CatalogItems = sentinelContext.Set<CatalogItem>();
+                sentinelContext.CatalogBrands = sentinelContext.Set<CatalogBrand>();
+                sentinelContext.CatalogTypes = sentinelContext.Set<CatalogType>();
+                sentinelContext.CatalogBrands.Add(new CatalogBrand("production-sentinel-brand") { Id = 800001 });
+                sentinelContext.CatalogTypes.Add(new CatalogType("production-sentinel-type") { Id = 800001 });
+                await sentinelContext.SaveChangesAsync(TestContext.Current.CancellationToken);
+                before = await ReadSeedSnapshot(sentinelContext);
+            }
+
+            Assert.Empty(before.Items);
+            Assert.Equal(new[] { "800001|production-sentinel-brand" }, before.Brands);
+            Assert.Equal(new[] { "800001|production-sentinel-type" }, before.Types);
+
+            using var productionFactory = new ProductionCatalogApiFactory(productionConnection);
+            using var productionClient = productionFactory.CreateClient();
+            Assert.Equal("Production", productionFactory.Services.GetRequiredService<IWebHostEnvironment>().EnvironmentName);
+            using var productionScope = productionFactory.Services.CreateScope();
+            productionScope.ServiceProvider.GetRequiredService<CatalogContext>().ChangeTracker.Clear();
+            var after = await ReadSeedSnapshot(productionScope.ServiceProvider.GetRequiredService<CatalogContext>());
+
+            Assert.Equal(before.Items, after.Items);
+            Assert.Equal(before.Brands, after.Brands);
+            Assert.Equal(before.Types, after.Types);
+            Assert.Empty(after.Items);
+            Assert.Single(after.Brands);
+            Assert.Single(after.Types);
+        }
+        finally
+        {
+            await admin.CloseAsync();
+            await using var dropDatabase = new NpgsqlCommand($"DROP DATABASE IF EXISTS \"{databaseName}\"", admin);
+            await admin.OpenAsync(TestContext.Current.CancellationToken);
+            await dropDatabase.ExecuteNonQueryAsync(TestContext.Current.CancellationToken);
+            fixtureContext.Dispose();
+        }
+    }
+
+    private static async Task<SeedSnapshot> ReadSeedSnapshot(CatalogContext context)
+    {
+        var items = await context.CatalogItems.AsNoTracking().OrderBy(x => x.Id)
+            .Select(x => $"{x.Id}|{x.Name}|{x.Description}|{x.Price}|{x.CatalogBrandId}|{x.CatalogTypeId}|{x.AvailableStock}|{x.RestockThreshold}|{x.MaxStockThreshold}|{x.PictureFileName}").ToArrayAsync();
+        var brands = await context.CatalogBrands.AsNoTracking().OrderBy(x => x.Id).Select(x => $"{x.Id}|{x.Brand}").ToArrayAsync();
+        var types = await context.CatalogTypes.AsNoTracking().OrderBy(x => x.Id).Select(x => $"{x.Id}|{x.Type}").ToArrayAsync();
+        return new SeedSnapshot(items, brands, types);
+    }
+
+    private async Task SeedCatalog(IServiceProvider services, CatalogContext context)
+    {
+        var seeder = new CatalogContextSeed(
+            _webApplicationFactory.Services.GetRequiredService<IWebHostEnvironment>(),
+            _webApplicationFactory.Services.GetRequiredService<IOptions<CatalogOptions>>(),
+            services.GetRequiredService<eShop.Catalog.API.Services.ICatalogAI>(),
+            _webApplicationFactory.Services.GetRequiredService<ILogger<CatalogContextSeed>>());
+        await seeder.SeedAsync(context);
+        context.ChangeTracker.Clear();
+    }
+
+    private sealed record SeedSnapshot(string[] Items, string[] Brands, string[] Types);
+    private sealed class ProductionCatalogApiFactory(string connectionString) : WebApplicationFactory<Program>
+    {
+        protected override void ConfigureWebHost(IWebHostBuilder builder)
+        {
+            builder.UseEnvironment("Production");
+        }
+
+        protected override IHost CreateHost(IHostBuilder builder)
+        {
+            builder.ConfigureHostConfiguration(configuration => configuration.AddInMemoryCollection(new Dictionary<string, string>
+            {
+                ["ConnectionStrings:catalogdb"] = connectionString
+            }));
+            return base.CreateHost(builder);
+        }
+    }
+
+    private sealed class SeedSource
+    {
+        public int Id { get; set; }
+        public string Brand { get; set; } = "";
+        public string Type { get; set; } = "";
+        public string Name { get; set; } = "";
+        public string Description { get; set; } = "";
+        public decimal Price { get; set; }
     }
 
     private HttpClient CreateHttpClient(ApiVersion apiVersion)
