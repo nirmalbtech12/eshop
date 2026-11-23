@@ -4,30 +4,34 @@ export async function addProductToCart(page: Page, productName: string) {
   await page.goto('/');
   await page.getByRole('link', { name: productName }).click();
   await expect(page.getByRole('heading', { name: productName })).toBeVisible();
+  const itemPath = new URL(page.url()).pathname;
+  const addResponse = page.waitForResponse(response =>
+    response.request().method() === 'POST' && new URL(response.url()).pathname === itemPath);
   await page.getByRole('button', { name: 'Add to shopping bag' }).click();
+  await addResponse;
   await expect(page.locator('.in-cart').getByRole('link', { name: 'shopping bag' })).toBeVisible();
 }
 
-/** Remove the first cart line via its Remove control, waiting for the update to post. */
+/** Remove the first cart line and wait for the committed result. */
 export async function removeFirstCartItem(page: Page) {
-  const updateRequest = page.waitForRequest(request =>
-    request.method() === 'POST' && new URL(request.url()).pathname === '/cart');
+  const previousCount = await page.locator('[data-cart-quantity-input]').count();
+  const updateResponse = page.waitForResponse(response =>
+    response.request().method() === 'POST' && new URL(response.url()).pathname === '/cart');
 
   await Promise.all([
-    updateRequest,
+    updateResponse,
     page.getByRole('button', { name: /^Remove/ }).first().click(),
   ]);
+  await expect(page.locator('[data-cart-quantity-input]')).toHaveCount(previousCount - 1, { timeout: 15_000 });
 }
 
 export async function emptyCart(page: Page) {
   await page.goto('/cart');
   await expect(page.getByRole('heading', { name: 'Shopping bag', exact: true })).toBeVisible();
 
-  const quantities = page.locator('[data-cart-quantity-input]');
-  while (await quantities.count() > 0) {
-    const previousCount = await quantities.count();
+  const initialCount = await page.locator('[data-cart-quantity-input]').count();
+  for (let remaining = initialCount; remaining > 0; remaining--) {
     await removeFirstCartItem(page);
-    await expect(quantities).toHaveCount(previousCount - 1, { timeout: 15_000 });
   }
 
   await expect(page.getByText('Your shopping bag is empty')).toBeVisible();

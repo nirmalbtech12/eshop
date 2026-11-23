@@ -20,10 +20,18 @@
             return;
         }
 
-        var value = parseInt(input.value, 10);
-        if (!isFinite(value) || value < 1) {
-            value = 1;
+        var error = form.parentElement.querySelector('[data-cart-quantity-error]');
+        var value = input.valueAsNumber;
+        if (!Number.isInteger(value) || value < 0) {
+            input.setCustomValidity('Enter zero or a positive whole number.');
+            input.reportValidity();
+            if (error) {
+                error.textContent = 'Enter zero or a positive whole number.';
+            }
+            return;
         }
+        input.setCustomValidity('');
+        if (error) error.textContent = '';
         input.value = String(value);
 
         apply.value = String(value);
@@ -53,4 +61,60 @@
             commit(input);
         }
     });
+
+    document.addEventListener('input', function (e) {
+        var input = e.target.closest && e.target.closest('[data-cart-quantity-input]');
+        if (input) {
+            input.setCustomValidity('');
+            var error = input.closest('form').parentElement.querySelector('[data-cart-quantity-error]');
+            if (error) error.textContent = '';
+        }
+    });
+
+    var updateInFlight = false;
+    var deferredNavigation = null;
+    document.addEventListener('submit', function (e) {
+        if (e.target.matches('.cart-quantity')) {
+            updateInFlight = true;
+        }
+    }, true);
+
+    document.addEventListener('click', function (e) {
+        if (!updateInFlight) return;
+        var link = e.target.closest && e.target.closest('a[href]');
+        if (link && link.origin === window.location.origin) {
+            e.preventDefault();
+            deferredNavigation = link.href;
+        }
+    }, true);
+
+    var originalFetch = window.fetch;
+    window.fetch = function (input, init) {
+        var request = input instanceof Request ? input : null;
+        var url = new URL(request ? request.url : input, window.location.href);
+        var method = (init && init.method) || (request && request.method) || 'GET';
+        if (method.toUpperCase() !== 'POST' || url.pathname !== '/cart') {
+            return originalFetch.apply(this, arguments);
+        }
+
+        updateInFlight = true;
+        return originalFetch.apply(this, arguments).then(function (response) {
+            return response.clone().text().then(function (html) {
+                var committed = response.ok && /data-cart-update-status=["']committed["']/.test(html);
+                updateInFlight = false;
+                if (committed && deferredNavigation) {
+                    var destination = deferredNavigation;
+                    deferredNavigation = null;
+                    window.location.assign(destination);
+                } else {
+                    deferredNavigation = null;
+                }
+                return response;
+            });
+        }, function (error) {
+            updateInFlight = false;
+            deferredNavigation = null;
+            throw error;
+        });
+    };
 })();
