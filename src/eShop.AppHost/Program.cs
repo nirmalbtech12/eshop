@@ -1,4 +1,4 @@
-﻿using eShop.AppHost;
+using eShop.AppHost;
 
 var builder = DistributedApplication.CreateBuilder(args);
 
@@ -16,6 +16,7 @@ var postgres = builder.AddPostgres("postgres")
 var catalogDb = postgres.AddDatabase("catalogdb");
 var identityDb = postgres.AddDatabase("identitydb");
 var orderDb = postgres.AddDatabase("orderingdb");
+var paymentDb = postgres.AddDatabase("paymentdb");
 var webhooksDb = postgres.AddDatabase("webhooksdb");
 
 var launchProfileName = ShouldUseHttpForEndpoints() ? "http" : "https";
@@ -50,7 +51,11 @@ builder.AddProject<Projects.OrderProcessor>("order-processor")
     .WaitFor(orderingApi); // wait for the orderingApi to be ready because that contains the EF migrations
 
 builder.AddProject<Projects.PaymentProcessor>("payment-processor")
-    .WithReference(rabbitMq).WaitFor(rabbitMq);
+    .WithReference(rabbitMq).WaitFor(rabbitMq)
+    .WithReference(paymentDb).WaitFor(paymentDb)
+    .WithEnvironment("PaymentOptions__TimeoutCount", builder.Configuration["PaymentSimulation:TimeoutCount"] ?? "0")
+    .WithEnvironment("PaymentOptions__TimeoutAfterCharge", builder.Configuration["PaymentSimulation:TimeoutAfterCharge"] ?? "false")
+    .WithEnvironment("PaymentOptions__PaymentSucceeded", builder.Configuration["PaymentSimulation:PaymentSucceeded"] ?? "true");
 
 var webHooksApi = builder.AddProject<Projects.Webhooks_API>("webhooks-api")
     .WithReference(rabbitMq).WaitFor(rabbitMq)
