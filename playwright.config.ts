@@ -86,9 +86,15 @@ export default defineConfig({
   webServer: {
     command: 'dotnet run --project src/eShop.AppHost/eShop.AppHost.csproj',
     url: 'http://localhost:5045',
-    reuseExistingServer: !process.env.CI,
+    reuseExistingServer: false,
+    env: {
+      ...process.env,
+      PaymentSimulation__TimeoutCount: process.env.PAYMENT_SCENARIO === 'retry' ? '2' : '0',
+      PaymentSimulation__TimeoutAfterCharge: process.env.PAYMENT_SCENARIO === 'retry' ? 'true' : 'false',
+      PaymentSimulation__PaymentSucceeded: process.env.PAYMENT_SCENARIO === 'declined' ? 'false' : 'true',
+    },
     stderr: 'pipe',
     stdout: 'pipe',
-    timeout: process.env.CI ? (5 * 60_000) : 60_000,
+    timeout: 5 * 60_000,
   },
 });

@@ -16,6 +16,9 @@ on:
       - '.github/workflows/pr-validation-maui.yml'
 jobs:
   test:
+    strategy:
+      matrix:
+        scenario: [happy, retry, declined]
     timeout-minutes: 60
     runs-on: ubuntu-latest
     steps:
@@ -31,14 +34,18 @@ jobs:
     - name: Install Playwright Browsers
       run: npx playwright install --with-deps chromium
     - name: Run Playwright tests
-      run: npm run test:e2e
+      run: npm run test:e2e -- --reporter=html,junit
       env:
+        PAYMENT_SCENARIO: ${{ matrix.scenario }}
+        PLAYWRIGHT_JUNIT_OUTPUT_FILE: artifacts/browser/${{ matrix.scenario }}/results.xml
         ESHOP_USE_HTTP_ENDPOINTS: 1
         USERNAME1: bob
         PASSWORD: Pass123$
     - uses: actions/upload-artifact@v4
       if: always()
       with:
-        name: playwright-report
-        path: playwright-report/
+        name: playwright-report-${{ matrix.scenario }}
+        path: |
+          playwright-report/
+          artifacts/browser/${{ matrix.scenario }}/
         retention-days: 30

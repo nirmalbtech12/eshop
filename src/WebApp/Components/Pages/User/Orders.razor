@@ -1,4 +1,4 @@
-﻿@page "/user/orders"
+@page "/user/orders"
 @attribute [Authorize]
 @attribute [StreamRendering]
 @inject OrderingService OrderingService
@@ -49,8 +49,12 @@ else
                 </div>
                 <div class="order-status">
                     <span class="status @order.Status.ToLower()">
-                        @order.Status
+                        @(order.Status == "StockConfirmed" ? "Payment pending" : order.Status)
                     </span>
+                    @if (order.Status == "StockConfirmed")
+                    {
+                        <span role="status">Confirmation may be delayed. Please do not place another order.</span>
+                    }
                 </div>
             </li>
         }
