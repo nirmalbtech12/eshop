@@ -1,13 +1,11 @@
-// Cart quantity: commit a directly-typed quantity immediately, without an Update
-// button. The [-] / [+] / Remove buttons already submit on their own (they are real
-// submit buttons inside the enhanced-navigation form), so this only enhances typing:
-// on change (or Enter) we copy the typed value into the hidden apply submitter and
-// request a submit, letting Blazor's enhanced form post update the basket in place.
-//
-// Delegated from document and safe to load once; no per-element wiring, so it keeps
-// working after enhanced-navigation morphs the DOM.
+// Commit typed quantities through the named cart form and hold same-tab navigation
+// until Blazor reports that the enhanced form response has been applied.
 (function () {
     'use strict';
+
+    var updatePending = false;
+    var pendingNavigation = null;
+    var navigationTimer = null;
 
     function commit(input) {
         var form = input.closest('form');
@@ -20,19 +18,38 @@
             return;
         }
 
-        var value = parseInt(input.value, 10);
-        if (!isFinite(value) || value < 1) {
-            value = 1;
+        var value = input.valueAsNumber;
+        if (!Number.isInteger(value)) {
+            input.setCustomValidity('Enter a whole number quantity.');
+            input.reportValidity();
+            return;
         }
-        input.value = String(value);
+        if (value < 0) {
+            input.setCustomValidity('Quantity cannot be negative.');
+            input.reportValidity();
+            return;
+        }
 
+        input.setCustomValidity('');
         apply.value = String(value);
-        if (typeof form.requestSubmit === 'function') {
-            form.requestSubmit(apply);
-        } else {
-            apply.click();
-        }
+        form.requestSubmit(apply);
     }
+
+    function showNavigationError() {
+        var error = document.querySelector('[data-cart-navigation-error]');
+        if (error) {
+            error.hidden = false;
+        }
+        pendingNavigation = null;
+        updatePending = false;
+    }
+
+    document.addEventListener('input', function (e) {
+        var input = e.target.closest && e.target.closest('[data-cart-quantity-input]');
+        if (input) {
+            input.setCustomValidity('');
+        }
+    });
 
     document.addEventListener('change', function (e) {
         var input = e.target.closest && e.target.closest('[data-cart-quantity-input]');
@@ -41,8 +58,6 @@
         }
     });
 
-    // Enter should apply the typed value rather than trigger the first submit button
-    // (which would be the decrement). Prevent the default submit and blur to commit.
     document.addEventListener('keydown', function (e) {
         if (e.key !== 'Enter') {
             return;
@@ -53,4 +68,39 @@
             commit(input);
         }
     });
+
+    document.addEventListener('submit', function (e) {
+        if (e.target.matches('form.cart-quantity')) {
+            updatePending = true;
+        }
+    }, true);
+
+    document.addEventListener('click', function (e) {
+        if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) {
+            return;
+        }
+        var link = e.target.closest && e.target.closest('a[href]');
+        if (!link || link.target || link.hasAttribute('download') || !updatePending) {
+            return;
+        }
+
+        e.preventDefault();
+        pendingNavigation = link.href;
+        if (navigationTimer) {
+            clearTimeout(navigationTimer);
+        }
+        navigationTimer = setTimeout(showNavigationError, 30000);
+    }, true);
+
+    if (window.Blazor && typeof window.Blazor.addEventListener === 'function') {
+        window.Blazor.addEventListener('enhancedload', function () {
+            updatePending = false;
+            if (pendingNavigation) {
+                var destination = pendingNavigation;
+                pendingNavigation = null;
+                clearTimeout(navigationTimer);
+                window.location.assign(destination);
+            }
+        });
+    }
 })();
